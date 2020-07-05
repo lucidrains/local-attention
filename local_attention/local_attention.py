@@ -13,6 +13,9 @@ TOKEN_SELF_ATTN_VALUE = -5e4 # carefully set for half precision to work
 def default(value, d):
     return d if value is None else value
 
+def to(t):
+    return {'device': t.device, 'dtype': t.dtype}
+
 def max_neg_value(tensor):
     return -torch.finfo(tensor.dtype).max
 
@@ -36,10 +39,32 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     tensors = [padded_x[:, ind:(ind + t), ...] for ind in range(forward + backward + 1)]
     return torch.cat(tensors, dim=dim)
 
+# Shaw's relative positional encoding per window
+
+def shift(x):
+    *_, i, j = x.shape
+    zero_pad = torch.zeros((*_, i, i), **to(x))
+    x = torch.cat([x, zero_pad], -1)
+    l = i + j - 1
+    x = x.view(*_, -1)
+    zero_pad = torch.zeros(*_, -x.size(-1) % l, **to(x))
+    shifted = torch.cat([x, zero_pad], -1).view(*_, -1, l)
+    return shifted[..., :i, i - 1:]
+
+class RelativePositionalEmbedding(nn.Module):
+    def __init__(self, dim, heads, length):
+        super().__init__()
+        self.scale = dim ** -0.5
+        self.weights = nn.Parameter(torch.zeros(length, heads, dim))
+
+    def forward(self, q):
+        emb = torch.einsum('bhnid,jhd->bhnij', q, self.weights.type(q.dtype)) * self.scale
+        return shift(emb)
+
 # main class
 
 class LocalAttention(nn.Module):
-    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False):
+    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False, rel_pos_emb_config = None):
         super().__init__()
         self.look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and self.look_forward > 0), 'you cannot look forward if causal'
@@ -51,6 +76,11 @@ class LocalAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         self.shared_qk = shared_qk
+
+        if rel_pos_emb_config is not None:
+            dim_head, heads = rel_pos_emb_config
+            self.heads = heads
+            self.rel_pos = RelativePositionalEmbedding(dim_head, heads, window_size * 2)
 
     def forward(self, q, k, v, input_mask = None):
         shape = q.shape
@@ -81,6 +111,10 @@ class LocalAttention(nn.Module):
         bq_k = look_around(b_t, **look_around_kwargs)
 
         dots = torch.einsum('bhie,bhje->bhij', bq, bk) * (e ** -0.5)
+
+        if self.rel_pos is not None:
+            rel_attn = self.rel_pos(bq.view(-1, self.heads, *bq.shape[1:])).reshape_as(dots)
+            dots = dots + rel_attn
 
         mask_value = max_neg_value(dots)
 
