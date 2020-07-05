@@ -1,3 +1,5 @@
+<img src="./local-attention-diagram.png" width="300px"></img>
+
 ## Local attention
 
 An implementation of local windowed attention, which sets an incredibly strong baseline for language modeling. It is becoming apparent that a transformer needs local attention in the bottom layers, with the top layers reserved for global attention to integrate the findings of previous layers. This repository makes it easy to immediately employ local window attention.
