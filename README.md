@@ -16,7 +16,7 @@ $ pip install local-attention
 
 ```python
 import torch
-from local_attention.local_attention import LocalAttention
+from local_attention import LocalAttention
 
 q = torch.randn(8, 2048, 64)
 k = torch.randn(8, 2048, 64)
@@ -38,7 +38,7 @@ This library also allows for local attention in the setting of shared query/key 
 
 ```python
 import torch
-from local_attention.local_attention import LocalAttention
+from local_attention import LocalAttention
 
 qk = torch.randn(8, 2048, 64)
 v  = torch.randn(8, 2048, 64)
