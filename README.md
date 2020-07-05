@@ -34,6 +34,26 @@ mask = torch.ones(1, 2048).bool()
 out = attn(q, k, v, input_mask = mask) # (1, 8, 2048, 64)
 ```
 
+This library also allows for local attention in the setting of shared query/key space. The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
+
+```python
+import torch
+from local_attention.local_attention import LocalAttention
+
+qk = torch.randn(8, 2048, 64)
+v  = torch.randn(8, 2048, 64)
+
+attn = LocalAttention(
+    window_size = 512,
+    shared_qk = True,
+    causal = True
+)
+
+mask = torch.ones(1, 2048).bool()
+out = attn(qk, qk, v, input_mask = mask) # (1, 8, 2048, 64)
+```
+
+
 ## Citation
 
 ```bibtex

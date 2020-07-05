@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from operator import mul
 from functools import reduce
 
+# constant
+
+TOKEN_SELF_ATTN_VALUE = -5e4 # carefully set for half precision to work
+
 # helper functions
 
 def default(value, d):
@@ -35,7 +39,7 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
 # main class
 
 class LocalAttention(nn.Module):
-    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0.):
+    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False):
         super().__init__()
         self.look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and self.look_forward > 0), 'you cannot look forward if causal'
@@ -46,6 +50,8 @@ class LocalAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
+        self.shared_qk = shared_qk
+
     def forward(self, q, k, v, input_mask = None):
         shape = q.shape
 
@@ -53,10 +59,13 @@ class LocalAttention(nn.Module):
         q, k, v = map(merge_into_batch, (q, k, v))
 
         b, t, e, device, dtype = *q.shape, q.device, q.dtype
-        window_size, causal, look_backward, look_forward = self.window_size, self.causal, self.look_backward, self.look_forward
+        window_size, causal, look_backward, look_forward, shared_qk = self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
         assert (t % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
 
         windows = t // window_size
+
+        if shared_qk:
+            k = F.normalize(k, 2, dim=-1).type_as(q)
 
         ticker = torch.arange(t, device=device, dtype=dtype)[None, :]
         b_t = ticker.reshape(1, windows, window_size)
@@ -74,6 +83,11 @@ class LocalAttention(nn.Module):
         dots = torch.einsum('bhie,bhje->bhij', bq, bk) * (e ** -0.5)
 
         mask_value = max_neg_value(dots)
+
+        if shared_qk:
+            mask = bq_t[:, :, :, None] == bq_k[:, :, None, :]
+            dots.masked_fill_(mask, TOKEN_SELF_ATTN_VALUE)
+            del mask
 
         if causal:
             mask = bq_t[:, :, :, None] < bq_k[:, :, None, :]
