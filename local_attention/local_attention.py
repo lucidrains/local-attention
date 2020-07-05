@@ -77,6 +77,7 @@ class LocalAttention(nn.Module):
 
         self.shared_qk = shared_qk
 
+        self.rel_pos = None
         if rel_pos_emb_config is not None:
             dim_head, heads = rel_pos_emb_config
             self.heads = heads

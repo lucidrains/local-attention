@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'local-attention',
   packages = find_packages(),
-  version = '1.0.1',
+  version = '1.0.2',
   license='MIT',
   description = 'Local windowed attention, for language modeling',
   author = 'Phil Wang',
