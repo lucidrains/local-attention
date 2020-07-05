@@ -2,6 +2,36 @@
 
 An implementation of local windowed attention, which sets an incredibly strong baseline for language modeling. It is becoming apparent that a transformer needs local attention in the bottom layers, with the top layers reserved for global attention to integrate the findings of previous layers. This repository makes it easy to immediately employ local window attention.
 
+This code has been battletested in multiple repositories already, alongside different implementations of sparse long-range attention.
+
+## Install
+
+```bash
+$ pip install local-attention
+```
+
+## Usage
+
+```python
+import torch
+from local_attention.local_attention import LocalAttention
+
+q = torch.randn(8, 2048, 64)
+k = torch.randn(8, 2048, 64)
+v = torch.randn(8, 2048, 64)
+
+attn = LocalAttention(
+    window_size = 512,       # window size. 512 is optimal, but 256 or 128 yields good enough results
+    causal = True,           # auto-regressive or not
+    look_backward = 1,       # each window looks at the window before
+    look_forward = 0,        # for non-auto-regressive case, will default to 1, so each window looks at the window before and after it
+    dropout = 0.1            # post-attention dropout
+)
+
+mask = torch.ones(1, 2048).bool()
+out = attn(q, k, v, input_mask = mask) # (1, 8, 2048, 64)
+```
+
 ## Citation
 
 ```bibtex

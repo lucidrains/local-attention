@@ -35,16 +35,15 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
 # main class
 
 class LocalAttention(nn.Module):
-    def __init__(self, bucket_size, heads, causal = False, look_backward = 1, look_forward = None, dropout = 0.):
+    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0.):
         super().__init__()
         self.look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and self.look_forward > 0), 'you cannot look forward if causal'
 
-        self.bucket_size = bucket_size
+        self.window_size = window_size
         self.causal = causal
         self.look_backward = look_backward
 
-        self.heads = heads
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v, input_mask = None):
@@ -53,16 +52,16 @@ class LocalAttention(nn.Module):
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
 
-        b, t, e, h, device, dtype = *q.shape, self.heads, q.device, q.dtype
-        bucket_size, causal, look_backward, look_forward = self.bucket_size, self.causal, self.look_backward, self.look_forward
-        assert (t % bucket_size) == 0, f'sequence length {t} must be divisible by bucket size {bucket_size} for local attention'
+        b, t, e, device, dtype = *q.shape, q.device, q.dtype
+        window_size, causal, look_backward, look_forward = self.window_size, self.causal, self.look_backward, self.look_forward
+        assert (t % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
 
-        buckets = t // bucket_size
+        windows = t // window_size
 
         ticker = torch.arange(t, device=device, dtype=dtype)[None, :]
-        b_t = ticker.reshape(1, buckets, bucket_size)
+        b_t = ticker.reshape(1, windows, window_size)
 
-        bucket_fn = lambda t: t.reshape(b, buckets, bucket_size, -1)
+        bucket_fn = lambda t: t.reshape(b, windows, window_size, -1)
         bq, bk, bv = map(bucket_fn, (q, k, v))
 
         look_around_kwargs = {'backward': look_backward, 'forward': look_forward}
@@ -87,7 +86,7 @@ class LocalAttention(nn.Module):
 
         if input_mask is not None:
             h = b // input_mask.shape[0]
-            input_mask = input_mask.reshape(-1, buckets, bucket_size)
+            input_mask = input_mask.reshape(-1, windows, window_size)
             mq = mk = input_mask
             mk = look_around(mk, pad_value=False, **look_around_kwargs)
             mask = (mq[:, :, :, None] * mk[:, :, None, :])
