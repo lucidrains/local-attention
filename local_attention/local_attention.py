@@ -66,12 +66,13 @@ class RelativePositionalEmbedding(nn.Module):
 class LocalAttention(nn.Module):
     def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False, rel_pos_emb_config = None):
         super().__init__()
-        self.look_forward = default(look_forward, 0 if causal else 1)
-        assert not (causal and self.look_forward > 0), 'you cannot look forward if causal'
+        look_forward = default(look_forward, 0 if causal else 1)
+        assert not (causal and look_forward > 0), 'you cannot look forward if causal'
 
         self.window_size = window_size
         self.causal = causal
         self.look_backward = look_backward
+        self.look_forward = look_forward
 
         self.dropout = nn.Dropout(dropout)
 
@@ -80,8 +81,9 @@ class LocalAttention(nn.Module):
         self.rel_pos = None
         if rel_pos_emb_config is not None:
             dim_head, heads = rel_pos_emb_config
+            rel_pos_length = window_size * (1 + look_forward + look_backward)
             self.heads = heads
-            self.rel_pos = RelativePositionalEmbedding(dim_head, heads, window_size * 2)
+            self.rel_pos = RelativePositionalEmbedding(dim_head, heads, rel_pos_length)
 
     def forward(self, q, k, v, input_mask = None):
         shape = q.shape
