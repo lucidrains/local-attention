@@ -53,6 +53,24 @@ mask = torch.ones(1, 2048).bool()
 out = attn(qk, qk, v, input_mask = mask) # (1, 8, 2048, 64)
 ```
 
+If you wish for the module to automagically pad your query / key / values as well as the mask, simply set the `autopad` keyword to `True`
+
+```python
+import torch
+from local_attention import LocalAttention
+
+q = torch.randn(8, 2057, 64)
+k = torch.randn(8, 2057, 64)
+v = torch.randn(8, 2057, 64)
+
+attn = LocalAttention(
+    window_size = 512,
+    causal = True
+)
+
+mask = torch.ones(1, 2057).bool()
+out = attn(q, k, v, input_mask = mask) # (1, 8, 2057, 64)
+```
 
 ## Citation
 

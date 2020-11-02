@@ -1,4 +1,5 @@
 import torch
+import math
 from torch import nn
 import torch.nn.functional as F
 from operator import mul
@@ -32,6 +33,15 @@ def expand_dim(t, dim, k, unsqueeze=True):
     expand_shape[dim] = k
     return t.expand(*expand_shape)
 
+def pad_to_multiple(tensor, multiple, dim=-1, value=0):
+    seqlen = tensor.shape[dim]
+    m = seqlen / multiple
+    if m.is_integer():
+        return tensor
+    remainder = math.ceil(m) * multiple - seqlen
+    pad_offset = (0,) * (-1 - dim) * 2
+    return F.pad(tensor, (*pad_offset, 0, remainder), value=value)
+
 def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     t = x.shape[1]
     dims = (len(x.shape) - dim) * (0, 0)
@@ -64,7 +74,7 @@ class RelativePositionalEmbedding(nn.Module):
 # main class
 
 class LocalAttention(nn.Module):
-    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False, rel_pos_emb_config = None):
+    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False, rel_pos_emb_config = None, autopad = False):
         super().__init__()
         look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and look_forward > 0), 'you cannot look forward if causal'
@@ -73,6 +83,7 @@ class LocalAttention(nn.Module):
         self.causal = causal
         self.look_backward = look_backward
         self.look_forward = look_forward
+        self.autopad = autopad
 
         self.dropout = nn.Dropout(dropout)
 
@@ -86,13 +97,15 @@ class LocalAttention(nn.Module):
             self.rel_pos = RelativePositionalEmbedding(dim_head, heads, rel_pos_length)
 
     def forward(self, q, k, v, input_mask = None):
-        shape = q.shape
-
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
 
-        b, t, e, device, dtype = *q.shape, q.device, q.dtype
+        if self.autopad:
+            orig_t = q.shape[1]
+            q, k, v = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
+
         window_size, causal, look_backward, look_forward, shared_qk = self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
+        b, t, e, device, dtype, shape = *q.shape, q.device, q.dtype, q.shape
         assert (t % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
 
         windows = t // window_size
@@ -137,6 +150,8 @@ class LocalAttention(nn.Module):
 
         if input_mask is not None:
             h = b // input_mask.shape[0]
+            if self.autopad:
+                input_mask = pad_to_multiple(input_mask, window_size, dim=-1, value=False)
             input_mask = input_mask.reshape(-1, windows, window_size)
             mq = mk = input_mask
             mk = look_around(mk, pad_value=False, **look_around_kwargs)
@@ -150,4 +165,8 @@ class LocalAttention(nn.Module):
 
         out = torch.einsum('bhij,bhje->bhie', attn, bv)
         out = out.reshape(*shape)
+
+        if self.autopad:
+            return out[..., :orig_t, :]
+
         return out
