@@ -97,6 +97,8 @@ class LocalAttention(nn.Module):
             self.rel_pos = RelativePositionalEmbedding(dim_head, heads, rel_pos_length)
 
     def forward(self, q, k, v, input_mask = None):
+        shape = q.shape
+
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
 
@@ -105,7 +107,7 @@ class LocalAttention(nn.Module):
             q, k, v = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
 
         window_size, causal, look_backward, look_forward, shared_qk = self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
-        b, t, e, device, dtype, shape = *q.shape, q.device, q.dtype, q.shape
+        b, t, e, device, dtype = *q.shape, q.device, q.dtype
         assert (t % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
 
         windows = t // window_size
@@ -164,9 +166,9 @@ class LocalAttention(nn.Module):
         attn = self.dropout(attn)
 
         out = torch.einsum('bhij,bhje->bhie', attn, bv)
-        out = out.reshape(*shape)
+        out = out.reshape(-1, t, e)
 
         if self.autopad:
-            return out[..., :orig_t, :]
+            out = out[:, :orig_t, :]
 
-        return out
+        return out.reshape(*shape)
