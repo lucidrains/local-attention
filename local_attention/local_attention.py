@@ -147,7 +147,7 @@ class LocalAttention(nn.Module):
 
             if self.exact_windowsize:
                 max_causal_window_size = (self.window_size * self.look_backward)
-                mask = mask & (bq_t[:, :, :, None] > (bq_k[:, :, None, :] + max_causal_window_size))
+                mask = mask | (bq_t[:, :, :, None] > (bq_k[:, :, None, :] + max_causal_window_size))
 
             dots.masked_fill_(mask, mask_value)
             del mask
