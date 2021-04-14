@@ -67,6 +67,7 @@ k = torch.randn(8, 2057, 64)
 v = torch.randn(8, 2057, 64)
 
 attn = LocalAttention(
+    dim = 64,
     window_size = 512,
     causal = True,
     autopad = True      # auto pads both inputs and mask, then truncates output appropriately
