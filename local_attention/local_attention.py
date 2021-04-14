@@ -5,14 +5,19 @@ import torch.nn.functional as F
 from operator import mul
 from functools import reduce
 
+from local_attention.rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
+
 # constant
 
 TOKEN_SELF_ATTN_VALUE = -5e4 # carefully set for half precision to work
 
 # helper functions
 
+def exists(val):
+    return val is not None
+
 def default(value, d):
-    return d if value is None else value
+    return d if not exists(value) else value
 
 def to(t):
     return {'device': t.device, 'dtype': t.dtype}
@@ -49,32 +54,22 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     tensors = [padded_x[:, ind:(ind + t), ...] for ind in range(forward + backward + 1)]
     return torch.cat(tensors, dim=dim)
 
-# Shaw's relative positional encoding per window
-
-def shift(x):
-    *_, i, j = x.shape
-    zero_pad = torch.zeros((*_, i, i), **to(x))
-    x = torch.cat([x, zero_pad], -1)
-    l = i + j - 1
-    x = x.view(*_, -1)
-    zero_pad = torch.zeros(*_, -x.size(-1) % l, **to(x))
-    shifted = torch.cat([x, zero_pad], -1).view(*_, -1, l)
-    return shifted[..., :i, i - 1:]
-
-class RelativePositionalEmbedding(nn.Module):
-    def __init__(self, dim, heads, length):
-        super().__init__()
-        self.scale = dim ** -0.5
-        self.weights = nn.Parameter(torch.zeros(length, heads, dim))
-
-    def forward(self, q):
-        emb = torch.einsum('bhnid,jhd->bhnij', q, self.weights.type(q.dtype)) * self.scale
-        return shift(emb)
-
 # main class
 
 class LocalAttention(nn.Module):
-    def __init__(self, window_size, causal = False, look_backward = 1, look_forward = None, dropout = 0., shared_qk = False, rel_pos_emb_config = None, autopad = False, exact_windowsize = False):
+    def __init__(
+        self,
+        window_size,
+        causal = False,
+        look_backward = 1,
+        look_forward = None,
+        dropout = 0.,
+        shared_qk = False,
+        rel_pos_emb_config = None,
+        dim = None,
+        autopad = False,
+        exact_windowsize = False
+    ):
         super().__init__()
         look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and look_forward > 0), 'you cannot look forward if causal'
@@ -91,17 +86,20 @@ class LocalAttention(nn.Module):
         self.shared_qk = shared_qk
 
         self.rel_pos = None
-        if rel_pos_emb_config is not None:
-            dim_head, heads = rel_pos_emb_config
-            rel_pos_length = window_size * (1 + look_forward + look_backward)
-            self.heads = heads
-            self.rel_pos = RelativePositionalEmbedding(dim_head, heads, rel_pos_length)
+        if exists(rel_pos_emb_config) or exists(dim):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
+            if exists(rel_pos_emb_config):
+                dim = rel_pos_emb_config[0]
+            self.rel_pos = SinusoidalEmbeddings(dim)
 
     def forward(self, q, k, v, input_mask = None):
         shape = q.shape
 
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
+
+        if exists(self.rel_pos):
+            pos_emb = self.rel_pos(q)
+            q, k = apply_rotary_pos_emb(q, k, pos_emb)
 
         if self.autopad:
             orig_t = q.shape[1]
@@ -130,10 +128,6 @@ class LocalAttention(nn.Module):
         bq_k = look_around(b_t, **look_around_kwargs)
 
         dots = torch.einsum('bhie,bhje->bhij', bq, bk) * (e ** -0.5)
-
-        if self.rel_pos is not None:
-            rel_attn = self.rel_pos(bq.view(-1, self.heads, *bq.shape[1:])).reshape_as(dots)
-            dots = dots + rel_attn
 
         mask_value = max_neg_value(dots)
 
