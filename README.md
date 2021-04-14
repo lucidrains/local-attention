@@ -23,6 +23,7 @@ k = torch.randn(8, 2048, 64)
 v = torch.randn(8, 2048, 64)
 
 attn = LocalAttention(
+    dim = 64,                # dimension of each head (you need to pass this in for relative positional encoding)
     window_size = 512,       # window size. 512 is optimal, but 256 or 128 yields good enough results
     causal = True,           # auto-regressive or not
     look_backward = 1,       # each window looks at the window before
@@ -45,6 +46,7 @@ qk = torch.randn(8, 2048, 64)
 v  = torch.randn(8, 2048, 64)
 
 attn = LocalAttention(
+    dim = 64,
     window_size = 512,
     shared_qk = True,
     causal = True
