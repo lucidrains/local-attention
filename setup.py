@@ -11,7 +11,7 @@ setup(
   url = 'https://github.com/lucidrains/local-attention',
   keywords = ['transformers', 'attention', 'artificial intelligence'],
   install_requires=[
-      'torch'
+      'torch', 'einops'
   ],
   classifiers=[
       'Development Status :: 4 - Beta',
