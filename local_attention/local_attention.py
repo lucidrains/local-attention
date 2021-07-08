@@ -125,7 +125,7 @@ class LocalAttention(nn.Module):
         bv = look_around(bv, **look_around_kwargs)
 
         bq_t = b_t
-        bq_k = look_around(b_t, **look_around_kwargs)
+        bq_k = look_around(b_t, pad_value = t, **look_around_kwargs)
 
         dots = torch.einsum('bhie,bhje->bhij', bq, bk) * (e ** -0.5)
 
