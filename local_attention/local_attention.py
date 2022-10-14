@@ -114,7 +114,7 @@ class LocalAttention(nn.Module):
         if shared_qk:
             k = F.normalize(k, 2, dim=-1).type_as(q)
 
-        ticker = torch.arange(t, device=device, dtype=dtype)[None, :]
+        ticker = torch.arange(t, device=device, dtype=torch.long)[None, :]
         b_t = ticker.reshape(1, windows, window_size)
 
         bucket_fn = lambda t: t.reshape(b, windows, window_size, -1)
