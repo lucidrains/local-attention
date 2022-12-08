@@ -88,7 +88,9 @@ class LocalAttention(nn.Module):
                 dim = rel_pos_emb_config[0]
             self.rel_pos = SinusoidalEmbeddings(dim)
 
-    def forward(self, q, k, v, input_mask = None):
+    def forward(self, q, k, v, mask = None, input_mask = None):
+        mask = default(mask, input_mask)
+
         shape, autopad, pad_value, window_size, causal, look_backward, look_forward, shared_qk = q.shape, self.autopad, -1, self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
 
         # https://github.com/arogozhnikov/einops/blob/master/docs/4-pack-and-unpack.ipynb
@@ -141,42 +143,42 @@ class LocalAttention(nn.Module):
         mask_value = max_neg_value(sim)
 
         if shared_qk:
-            mask = bq_t == bq_k
-            sim = sim.masked_fill(mask, TOKEN_SELF_ATTN_VALUE)
-            del mask
+            self_mask = bq_t == bq_k
+            sim = sim.masked_fill(self_mask, TOKEN_SELF_ATTN_VALUE)
+            del self_mask
 
         if causal:
-            mask = bq_t < bq_k
+            causal_mask = bq_t < bq_k
 
             if self.exact_windowsize:
                 max_causal_window_size = (self.window_size * self.look_backward)
-                mask = mask | (bq_t > (bq_k + max_causal_window_size))
+                causal_mask = causal_mask | (bq_t > (bq_k + max_causal_window_size))
 
-            sim = sim.masked_fill(mask, mask_value)
-            del mask
+            sim = sim.masked_fill(causal_mask, mask_value)
+            del causal_mask
 
         # mask out padding value
 
         if autopad and needed_pad:
-            mask = bq_k == pad_value
-            sim = sim.masked_fill(mask, mask_value)
-            del mask
+            pad_mask = bq_k == pad_value
+            sim = sim.masked_fill(pad_mask, mask_value)
+            del pad_mask
 
-        if exists(input_mask):
-            batch = input_mask.shape[0]
+        if exists(mask):
+            batch = mask.shape[0]
             assert (b % batch) == 0
 
-            h = b // input_mask.shape[0]
+            h = b // mask.shape[0]
 
             if autopad:
-                input_mask = pad_to_multiple(input_mask, window_size, dim = -1, value = False)
+                mask = pad_to_multiple(mask, window_size, dim = -1, value = False)
 
-            input_mask = rearrange(input_mask, '... (w n) -> (...) w n', w = windows, n = window_size)
-            input_mask = look_around(input_mask, **{**look_around_kwargs, 'pad_value': False})
-            input_mask = rearrange(input_mask, '... j -> ... 1 j')
-            input_mask = repeat(input_mask, 'b ... -> (b h) ...', h = h)
-            sim = sim.masked_fill(~input_mask, mask_value)
-            del input_mask
+            mask = rearrange(mask, '... (w n) -> (...) w n', w = windows, n = window_size)
+            mask = look_around(mask, **{**look_around_kwargs, 'pad_value': False})
+            mask = rearrange(mask, '... j -> ... 1 j')
+            mask = repeat(mask, 'b ... -> (b h) ...', h = h)
+            sim = sim.masked_fill(~mask, mask_value)
+            del mask
 
         # attention
 

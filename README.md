@@ -33,7 +33,7 @@ attn = LocalAttention(
 )
 
 mask = torch.ones(2, 2048).bool()
-out = attn(q, k, v, input_mask = mask) # (2, 8, 2048, 64)
+out = attn(q, k, v, mask = mask) # (2, 8, 2048, 64)
 ```
 
 This library also allows for local attention in the setting of shared query/key space (Reformer architecture). The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
@@ -53,7 +53,7 @@ attn = LocalAttention(
 )
 
 mask = torch.ones(2, 2048).bool()
-out = attn(qk, qk, v, input_mask = mask) # (2, 8, 2048, 64)
+out = attn(qk, qk, v, mask = mask) # (2, 8, 2048, 64)
 ```
 
 If you wish for the module to automagically pad your query / key / values as well as the mask, simply set the `autopad` keyword to `True`
@@ -73,7 +73,7 @@ attn = LocalAttention(
 )
 
 mask = torch.ones(1, 2057).bool()
-out = attn(q, k, v, input_mask = mask) # (8, 2057, 64)
+out = attn(q, k, v, mask = mask) # (8, 2057, 64)
 ```
 
 ### Local Attention Transformer

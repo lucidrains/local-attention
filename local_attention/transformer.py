@@ -147,7 +147,7 @@ class LocalTransformer(nn.Module):
 
         return out[:, n:]
 
-    def forward(self, x, return_loss = False):
+    def forward(self, x, mask = None, return_loss = False):
         if return_loss:
             x, labels = x[:, :-1], x[:, 1:]
 
@@ -158,7 +158,7 @@ class LocalTransformer(nn.Module):
         x = x + self.pos_emb(torch.arange(n, device = device))
 
         for attn, ff in self.layers:
-            x = attn(x) + x
+            x = attn(x, mask = mask) + x
             x = ff(x) + x
 
         logits = self.to_logits(x)
