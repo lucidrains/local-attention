@@ -18,9 +18,9 @@ $ pip install local-attention
 import torch
 from local_attention import LocalAttention
 
-q = torch.randn(8, 2048, 64)
-k = torch.randn(8, 2048, 64)
-v = torch.randn(8, 2048, 64)
+q = torch.randn(2, 8, 2048, 64)
+k = torch.randn(2, 8, 2048, 64)
+v = torch.randn(2, 8, 2048, 64)
 
 attn = LocalAttention(
     dim = 64,                # dimension of each head (you need to pass this in for relative positional encoding)
@@ -32,18 +32,18 @@ attn = LocalAttention(
     exact_windowsize = False # if this is set to true, in the causal setting, each query will see at maximum the number of keys equal to the window size
 )
 
-mask = torch.ones(1, 2048).bool()
-out = attn(q, k, v, input_mask = mask) # (1, 8, 2048, 64)
+mask = torch.ones(2, 2048).bool()
+out = attn(q, k, v, input_mask = mask) # (2, 8, 2048, 64)
 ```
 
-This library also allows for local attention in the setting of shared query/key space. The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
+This library also allows for local attention in the setting of shared query/key space (Reformer architecture). The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
 
 ```python
 import torch
 from local_attention import LocalAttention
 
-qk = torch.randn(8, 2048, 64)
-v  = torch.randn(8, 2048, 64)
+qk = torch.randn(2, 8, 2048, 64)
+v  = torch.randn(2, 8, 2048, 64)
 
 attn = LocalAttention(
     dim = 64,
@@ -52,8 +52,8 @@ attn = LocalAttention(
     causal = True
 )
 
-mask = torch.ones(1, 2048).bool()
-out = attn(qk, qk, v, input_mask = mask) # (1, 8, 2048, 64)
+mask = torch.ones(2, 2048).bool()
+out = attn(qk, qk, v, input_mask = mask) # (2, 8, 2048, 64)
 ```
 
 If you wish for the module to automagically pad your query / key / values as well as the mask, simply set the `autopad` keyword to `True`
@@ -73,10 +73,10 @@ attn = LocalAttention(
 )
 
 mask = torch.ones(1, 2057).bool()
-out = attn(q, k, v, input_mask = mask) # (1, 8, 2057, 64)
+out = attn(q, k, v, input_mask = mask) # (8, 2057, 64)
 ```
 
-## Local Attention Transformer
+### Local Attention Transformer
 
 A full local attention transformer
 
@@ -98,7 +98,9 @@ x = torch.randint(0, 256, (1, 8192)).cuda()
 logits = model(x) # (1, 8192, 256)
 ```
 
-## Enwik8 at 4096, local attention window size of 256
+### Enwik8 at 4096
+
+window size of 256, lookback of 1, total receptive field of 512
 
 ```bash
 $ python train.py
