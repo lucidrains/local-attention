@@ -35,10 +35,10 @@ def pad_to_multiple(tensor, multiple, dim=-1, value=0):
     seqlen = tensor.shape[dim]
     m = seqlen / multiple
     if m.is_integer():
-        return tensor
+        return False, tensor
     remainder = math.ceil(m) * multiple - seqlen
     pad_offset = (0,) * (-1 - dim) * 2
-    return F.pad(tensor, (*pad_offset, 0, remainder), value = value)
+    return True, F.pad(tensor, (*pad_offset, 0, remainder), value = value)
 
 def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     t = x.shape[1]
@@ -104,7 +104,7 @@ class LocalAttention(nn.Module):
 
         if autopad:
             orig_seq_len = q.shape[1]
-            q, k, v = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
+            (needed_pad, q), (_, k), (_, v) = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
 
         b, n, dim_head, device, dtype = *q.shape, q.device, q.dtype
         scale = dim_head ** -0.5
@@ -157,22 +157,26 @@ class LocalAttention(nn.Module):
 
         # mask out padding value
 
-        mask = bq_k == pad_value
-        sim = sim.masked_fill(mask, mask_value)
-        del mask
+        if autopad and needed_pad:
+            mask = bq_k == pad_value
+            sim = sim.masked_fill(mask, mask_value)
+            del mask
 
         if exists(input_mask):
+            batch = input_mask.shape[0]
+            assert (b % batch) == 0
+
             h = b // input_mask.shape[0]
+
             if autopad:
                 input_mask = pad_to_multiple(input_mask, window_size, dim = -1, value = False)
 
             input_mask = rearrange(input_mask, '... (w n) -> (...) w n', w = windows, n = window_size)
-            mq = mk = input_mask
-            mk = look_around(mk, **{**look_around_kwargs, 'pad_value': False})
-            mask = mq[..., :, None] & mk[..., None, :]
-            mask = repeat(mask, 'b ... -> (b h) ...', h = h)
-            sim = sim.masked_fill(~mask, mask_value)
-            del mask
+            input_mask = look_around(input_mask, **{**look_around_kwargs, 'pad_value': False})
+            input_mask = rearrange(input_mask, '... j -> ... 1 j')
+            input_mask = repeat(input_mask, 'b ... -> (b h) ...', h = h)
+            sim = sim.masked_fill(~input_mask, mask_value)
+            del input_mask
 
         # attention
 
