@@ -46,14 +46,14 @@ def pad_to_multiple(tensor, multiple, dim=-1, value=0):
         return tensor
     remainder = math.ceil(m) * multiple - seqlen
     pad_offset = (0,) * (-1 - dim) * 2
-    return F.pad(tensor, (*pad_offset, 0, remainder), value=value)
+    return F.pad(tensor, (*pad_offset, 0, remainder), value = value)
 
 def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     t = x.shape[1]
     dims = (len(x.shape) - dim) * (0, 0)
-    padded_x = F.pad(x, (*dims, backward, forward), value= pad_value)
+    padded_x = F.pad(x, (*dims, backward, forward), value = pad_value)
     tensors = [padded_x[:, ind:(ind + t), ...] for ind in range(forward + backward + 1)]
-    return torch.cat(tensors, dim=dim)
+    return torch.cat(tensors, dim = dim)
 
 # main class
 
@@ -88,6 +88,8 @@ class LocalAttention(nn.Module):
 
         self.shared_qk = shared_qk
 
+        # relative positions
+
         self.rel_pos = None
         if exists(rel_pos_emb_config) or exists(dim):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
             if exists(rel_pos_emb_config):
@@ -95,7 +97,7 @@ class LocalAttention(nn.Module):
             self.rel_pos = SinusoidalEmbeddings(dim)
 
     def forward(self, q, k, v, input_mask = None):
-        shape, autopad = q.shape, self.autopad
+        shape, autopad, pad_value = q.shape, self.autopad, -1
 
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
@@ -126,7 +128,12 @@ class LocalAttention(nn.Module):
         bucket_fn = lambda t: t.reshape(b, windows, window_size, -1)
         bq, bk, bv = map(bucket_fn, (q, k, v))
 
-        look_around_kwargs = {'backward': look_backward, 'forward': look_forward}
+        look_around_kwargs = dict(
+            backward =  look_backward,
+            forward =  look_forward,
+            pad_value = pad_value
+        )
+
         bk = look_around(bk, **look_around_kwargs)
         bv = look_around(bv, **look_around_kwargs)
 
@@ -147,23 +154,23 @@ class LocalAttention(nn.Module):
 
             if self.exact_windowsize:
                 max_causal_window_size = (self.window_size * self.look_backward)
-                mask = mask | (bq_t[:, :, :, None] > (bq_k[:, :, None, :] + max_causal_window_size))
+                mask = mask | (bq_t[..., :, None] > (bq_k[..., None, :] + max_causal_window_size))
 
             dots = dots.masked_fill(mask, mask_value)
             del mask
 
-        mask = bq_k[:, :, None, :] == -1
-        dots.masked_fill_(mask, mask_value)
+        mask = bq_k[:, :, None, :] == pad_value
+        dots = dots.masked_fill(mask, mask_value)
         del mask
 
-        if input_mask is not None:
+        if exists(input_mask):
             h = b // input_mask.shape[0]
             if autopad:
                 input_mask = pad_to_multiple(input_mask, window_size, dim = -1, value = False)
             input_mask = input_mask.reshape(-1, windows, window_size)
             mq = mk = input_mask
-            mk = look_around(mk, pad_value = False, **look_around_kwargs)
-            mask = (mq[..., :, None] * mk[..., None, :])
+            mk = look_around(mk, **{**look_around_kwargs, 'pad_value': False})
+            mask = mq[..., :, None] & mk[..., None, :]
             mask = merge_dims(0, 1, expand_dim(mask, 1, h))
             dots = dots.masked_fill(~mask, mask_value)
             del mask
