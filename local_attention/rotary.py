@@ -1,6 +1,8 @@
 import torch
 from torch import nn, einsum
 
+from einops import rearrange
+
 class SinusoidalEmbeddings(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -11,11 +13,10 @@ class SinusoidalEmbeddings(nn.Module):
         n = x.shape[-2]
         t = torch.arange(n, device = x.device).type_as(self.inv_freq)
         freqs = torch.einsum('i , j -> i j', t, self.inv_freq)
-        emb = torch.cat((freqs, freqs), dim=-1)
-        return emb[None, :, :]
+        return torch.cat((freqs, freqs), dim=-1)
 
 def rotate_half(x):
-    x = x.reshape((x.shape[0], -1, 2, x.shape[-1] // 2))
+    x = rearrange(x, 'b ... (r d) -> b (...) r d', r = 2)
     x1, x2 = x.unbind(dim = -2)
     return torch.cat((-x2, x1), dim = -1)
 

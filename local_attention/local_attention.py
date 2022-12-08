@@ -171,7 +171,7 @@ class LocalAttention(nn.Module):
             h = b // mask.shape[0]
 
             if autopad:
-                mask = pad_to_multiple(mask, window_size, dim = -1, value = False)
+                _, mask = pad_to_multiple(mask, window_size, dim = -1, value = False)
 
             mask = rearrange(mask, '... (w n) -> (...) w n', w = windows, n = window_size)
             mask = look_around(mask, **{**look_around_kwargs, 'pad_value': False})

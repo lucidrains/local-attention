@@ -49,6 +49,7 @@ class LocalMHA(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
 
         self.attn_fn = LocalAttention(
+            dim = dim_head,
             window_size = window_size,
             causal = causal,
             autopad = True,
@@ -58,11 +59,11 @@ class LocalMHA(nn.Module):
 
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
-    def forward(self, x):
+    def forward(self, x, mask = None):
         q, k, v = self.to_qkv(x).chunk(3, dim = -1)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.heads), (q, k, v)) 
 
-        out = self.attn_fn(q, k, v)
+        out = self.attn_fn(q, k, v, mask = mask)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
