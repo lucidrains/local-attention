@@ -41,10 +41,14 @@ class LocalMHA(nn.Module):
         heads = 8,
         dropout = 0.,
         causal = False,
+        prenorm = False,
         **kwargs
     ):
         super().__init__()        
         inner_dim = dim_head * heads
+
+        self.norm = nn.LayerNorm(dim) if prenorm else None
+
         self.heads = heads
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
 
@@ -60,6 +64,9 @@ class LocalMHA(nn.Module):
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
     def forward(self, x, mask = None):
+        if exists(self.norm):
+            x = self.norm(x)
+
         q, k, v = self.to_qkv(x).chunk(3, dim = -1)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.heads), (q, k, v)) 
 
@@ -115,7 +122,7 @@ class LocalTransformer(nn.Module):
 
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, **kwargs),
+                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, prenorm = True, **kwargs),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
             ]))
 
