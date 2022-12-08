@@ -1,9 +1,10 @@
-import torch
 import math
-from torch import nn
-import torch.nn.functional as F
 from operator import mul
 from functools import reduce
+
+import torch
+from torch import nn, einsum
+import torch.nn.functional as F
 
 from local_attention.rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
 
@@ -75,11 +76,13 @@ class LocalAttention(nn.Module):
         assert not (causal and look_forward > 0), 'you cannot look forward if causal'
 
         self.window_size = window_size
+        self.autopad = autopad
+        self.exact_windowsize = exact_windowsize
+
         self.causal = causal
+
         self.look_backward = look_backward
         self.look_forward = look_forward
-        self.exact_windowsize = exact_windowsize
-        self.autopad = autopad
 
         self.dropout = nn.Dropout(dropout)
 
@@ -92,7 +95,7 @@ class LocalAttention(nn.Module):
             self.rel_pos = SinusoidalEmbeddings(dim)
 
     def forward(self, q, k, v, input_mask = None):
-        shape = q.shape
+        shape, autopad = q.shape, self.autopad
 
         merge_into_batch = lambda t: t.reshape(-1, *t.shape[-2:])
         q, k, v = map(merge_into_batch, (q, k, v))
@@ -101,12 +104,15 @@ class LocalAttention(nn.Module):
             pos_emb = self.rel_pos(q)
             q, k = apply_rotary_pos_emb(q, k, pos_emb)
 
-        if self.autopad:
+        if autopad:
             orig_t = q.shape[1]
             q, k, v = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
 
         window_size, causal, look_backward, look_forward, shared_qk = self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
+
         b, t, e, device, dtype = *q.shape, q.device, q.dtype
+        scale = e ** -0.5
+
         assert (t % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
 
         windows = t // window_size
@@ -127,23 +133,23 @@ class LocalAttention(nn.Module):
         bq_t = b_t
         bq_k = look_around(b_t, **look_around_kwargs)
 
-        dots = torch.einsum('bhie,bhje->bhij', bq, bk) * (e ** -0.5)
+        dots = einsum('b h i e, b h j e -> b h i j', bq, bk) * scale
 
         mask_value = max_neg_value(dots)
 
         if shared_qk:
-            mask = bq_t[:, :, :, None] == bq_k[:, :, None, :]
-            dots.masked_fill_(mask, TOKEN_SELF_ATTN_VALUE)
+            mask = bq_t[..., :, None] == bq_k[..., None, :]
+            dots = dots.masked_fill(mask, TOKEN_SELF_ATTN_VALUE)
             del mask
 
         if causal:
-            mask = bq_t[:, :, :, None] < bq_k[:, :, None, :]
+            mask = bq_t[..., :, None] < bq_k[..., None, :]
 
             if self.exact_windowsize:
                 max_causal_window_size = (self.window_size * self.look_backward)
                 mask = mask | (bq_t[:, :, :, None] > (bq_k[:, :, None, :] + max_causal_window_size))
 
-            dots.masked_fill_(mask, mask_value)
+            dots = dots.masked_fill(mask, mask_value)
             del mask
 
         mask = bq_k[:, :, None, :] == -1
@@ -152,23 +158,23 @@ class LocalAttention(nn.Module):
 
         if input_mask is not None:
             h = b // input_mask.shape[0]
-            if self.autopad:
-                input_mask = pad_to_multiple(input_mask, window_size, dim=-1, value=False)
+            if autopad:
+                input_mask = pad_to_multiple(input_mask, window_size, dim = -1, value = False)
             input_mask = input_mask.reshape(-1, windows, window_size)
             mq = mk = input_mask
-            mk = look_around(mk, pad_value=False, **look_around_kwargs)
-            mask = (mq[:, :, :, None] * mk[:, :, None, :])
+            mk = look_around(mk, pad_value = False, **look_around_kwargs)
+            mask = (mq[..., :, None] * mk[..., None, :])
             mask = merge_dims(0, 1, expand_dim(mask, 1, h))
-            dots.masked_fill_(~mask, mask_value)
+            dots = dots.masked_fill(~mask, mask_value)
             del mask
 
-        attn = dots.softmax(dim=-1)
+        attn = dots.softmax(dim = -1)
         attn = self.dropout(attn)
 
-        out = torch.einsum('bhij,bhje->bhie', attn, bv)
+        out = einsum('b h i j, b h j e -> b h i e', attn, bv)
         out = out.reshape(-1, t, e)
 
-        if self.autopad:
+        if autopad:
             out = out[:, :orig_t, :]
 
         return out.reshape(*shape)

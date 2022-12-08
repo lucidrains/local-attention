@@ -1,4 +1,4 @@
-<img src="./local-attention-diagram.png" width="300px"></img>
+<img src="./diagram.png" width="300px"></img>
 
 ## Local attention
 
@@ -74,6 +74,34 @@ attn = LocalAttention(
 
 mask = torch.ones(1, 2057).bool()
 out = attn(q, k, v, input_mask = mask) # (1, 8, 2057, 64)
+```
+
+## Local Attention Transformer
+
+A full local attention transformer
+
+```python
+import torch
+from local_attention import LocalTransformer
+
+model = LocalTransformer(
+    num_tokens = 256,
+    dim = 512,
+    depth = 6,
+    max_seq_len = 8192,
+    causal = True,
+    local_attn_window_size = 256
+).cuda()
+
+x = torch.randint(0, 256, (1, 8192)).cuda()
+
+logits = model(x) # (1, 8192, 256)
+```
+
+## Enwik8 at 4096, local attention window size of 256
+
+```bash
+$ python train.py
 ```
 
 ## Citation
