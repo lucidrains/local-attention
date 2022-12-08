@@ -18,9 +18,9 @@ $ pip install local-attention
 import torch
 from local_attention import LocalAttention
 
-q = torch.randn(8, 2048, 64)
-k = torch.randn(8, 2048, 64)
-v = torch.randn(8, 2048, 64)
+q = torch.randn(2, 8, 2048, 64)
+k = torch.randn(2, 8, 2048, 64)
+v = torch.randn(2, 8, 2048, 64)
 
 attn = LocalAttention(
     dim = 64,                # dimension of each head (you need to pass this in for relative positional encoding)
@@ -32,18 +32,18 @@ attn = LocalAttention(
     exact_windowsize = False # if this is set to true, in the causal setting, each query will see at maximum the number of keys equal to the window size
 )
 
-mask = torch.ones(1, 2048).bool()
-out = attn(q, k, v, input_mask = mask) # (1, 8, 2048, 64)
+mask = torch.ones(2, 2048).bool()
+out = attn(q, k, v, input_mask = mask) # (2, 8, 2048, 64)
 ```
 
-This library also allows for local attention in the setting of shared query/key space. The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
+This library also allows for local attention in the setting of shared query/key space (Reformer architecture). The normalization of the keys, as well as the masking of tokens to itself, will be taken care of.
 
 ```python
 import torch
 from local_attention import LocalAttention
 
-qk = torch.randn(8, 2048, 64)
-v  = torch.randn(8, 2048, 64)
+qk = torch.randn(2, 8, 2048, 64)
+v  = torch.randn(2, 8, 2048, 64)
 
 attn = LocalAttention(
     dim = 64,
@@ -52,7 +52,7 @@ attn = LocalAttention(
     causal = True
 )
 
-mask = torch.ones(1, 2048).bool()
+mask = torch.ones(2, 2048).bool()
 out = attn(qk, qk, v, input_mask = mask) # (1, 8, 2048, 64)
 ```
 
