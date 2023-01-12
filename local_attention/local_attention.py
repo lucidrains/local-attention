@@ -111,7 +111,7 @@ class LocalAttention(nn.Module):
         b, n, dim_head, device, dtype = *q.shape, q.device, q.dtype
         scale = dim_head ** -0.5
 
-        assert (n % window_size) == 0, f'sequence length {t} must be divisible by window size {window_size} for local attention'
+        assert (n % window_size) == 0, f'sequence length {n} must be divisible by window size {window_size} for local attention'
 
         windows = n // window_size
 
