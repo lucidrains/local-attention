@@ -11,6 +11,9 @@ from local_attention.local_attention import LocalAttention
 def exists(val):
     return val is not None
 
+def l2norm(t):
+    return F.normalize(t, dim = -1)
+
 def eval_decorator(fn):
     def inner(model, *args, **kwargs):
         was_training = model.training
@@ -42,6 +45,8 @@ class LocalMHA(nn.Module):
         dropout = 0.,
         causal = False,
         prenorm = False,
+        qk_rmsnorm = False,
+        qk_scale = 8,
         **kwargs
     ):
         super().__init__()        
@@ -52,11 +57,18 @@ class LocalMHA(nn.Module):
         self.heads = heads
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
 
+        self.qk_rmsnorm = qk_rmsnorm
+
+        if qk_rmsnorm:
+            self.q_scale = nn.Parameter(torch.ones(dim_head))
+            self.k_scale = nn.Parameter(torch.ones(dim_head))
+
         self.attn_fn = LocalAttention(
             dim = dim_head,
             window_size = window_size,
             causal = causal,
             autopad = True,
+            scale = (qk_scale if qk_rmsnorm else None),
             exact_windowsize = True,
             **kwargs
         )
@@ -69,6 +81,11 @@ class LocalMHA(nn.Module):
 
         q, k, v = self.to_qkv(x).chunk(3, dim = -1)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.heads), (q, k, v)) 
+
+        if self.qk_rmsnorm:
+            q, k = map(l2norm, (q, k))
+            q = q * self.q_scale
+            k = k * self.k_scale
 
         out = self.attn_fn(q, k, v, mask = mask)
 

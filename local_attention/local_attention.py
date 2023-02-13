@@ -61,11 +61,14 @@ class LocalAttention(nn.Module):
         rel_pos_emb_config = None,
         dim = None,
         autopad = False,
-        exact_windowsize = False
+        exact_windowsize = False,
+        scale = None
     ):
         super().__init__()
         look_forward = default(look_forward, 0 if causal else 1)
         assert not (causal and look_forward > 0), 'you cannot look forward if causal'
+
+        self.scale = scale
 
         self.window_size = window_size
         self.autopad = autopad
@@ -109,7 +112,8 @@ class LocalAttention(nn.Module):
             (needed_pad, q), (_, k), (_, v) = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
 
         b, n, dim_head, device, dtype = *q.shape, q.device, q.dtype
-        scale = dim_head ** -0.5
+
+        scale = default(self.scale, dim_head ** -0.5)
 
         assert (n % window_size) == 0, f'sequence length {n} must be divisible by window size {window_size} for local attention'
 
