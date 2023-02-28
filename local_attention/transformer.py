@@ -47,6 +47,7 @@ class LocalMHA(nn.Module):
         prenorm = False,
         qk_rmsnorm = False,
         qk_scale = 8,
+        use_xpos = False,
         **kwargs
     ):
         super().__init__()        
@@ -70,6 +71,7 @@ class LocalMHA(nn.Module):
             autopad = True,
             scale = (qk_scale if qk_rmsnorm else None),
             exact_windowsize = True,
+            use_xpos = use_xpos,
             **kwargs
         )
 
@@ -128,6 +130,7 @@ class LocalTransformer(nn.Module):
         attn_dropout = 0.,
         ff_dropout = 0.,
         ignore_index = -1,
+        use_xpos = False,
         **kwargs
     ):
         super().__init__()
@@ -139,7 +142,7 @@ class LocalTransformer(nn.Module):
 
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, prenorm = True, **kwargs),
+                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, prenorm = True, **kwargs),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
             ]))
 

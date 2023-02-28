@@ -62,7 +62,8 @@ class LocalAttention(nn.Module):
         dim = None,
         autopad = False,
         exact_windowsize = False,
-        scale = None
+        scale = None,
+        use_xpos = False
     ):
         super().__init__()
         look_forward = default(look_forward, 0 if causal else 1)
@@ -86,15 +87,19 @@ class LocalAttention(nn.Module):
         # relative positions
 
         self.rel_pos = None
+        self.use_xpos = use_xpos
+
         if exists(rel_pos_emb_config) or exists(dim):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
             if exists(rel_pos_emb_config):
                 dim = rel_pos_emb_config[0]
-            self.rel_pos = SinusoidalEmbeddings(dim)
+            self.rel_pos = SinusoidalEmbeddings(dim, use_xpos = use_xpos, scale_base = window_size // 2)
 
-    def forward(self, q, k, v, mask = None, input_mask = None):
+    def forward(self, q, k, v, mask = None, input_mask = None, window_size = None):
         mask = default(mask, input_mask)
 
-        shape, autopad, pad_value, window_size, causal, look_backward, look_forward, shared_qk = q.shape, self.autopad, -1, self.window_size, self.causal, self.look_backward, self.look_forward, self.shared_qk
+        assert not (exists(window_size) and not self.use_xpos), 'cannot perform window size extrapolation if xpos is not turned on'
+
+        shape, autopad, pad_value, window_size, causal, look_backward, look_forward, shared_qk = q.shape, self.autopad, -1, default(window_size, self.window_size), self.causal, self.look_backward, self.look_forward, self.shared_qk
 
         # https://github.com/arogozhnikov/einops/blob/master/docs/4-pack-and-unpack.ipynb
         (q, packed_shape), (k, _), (v, _) = map(lambda t: pack([t], '* n d'), (q, k, v))
@@ -102,8 +107,8 @@ class LocalAttention(nn.Module):
         # rotary embeddings
 
         if exists(self.rel_pos):
-            pos_emb = self.rel_pos(q)
-            q, k = apply_rotary_pos_emb(q, k, pos_emb)
+            pos_emb, scale = self.rel_pos(q)
+            q, k = apply_rotary_pos_emb(q, k, pos_emb, scale = scale)
 
         # auto padding
 

@@ -140,3 +140,11 @@ $ python train.py
     primaryClass = {cs.CL}
 }
 ```
+
+```bibtex
+@inproceedings{Sun2022ALT,
+    title     = {A Length-Extrapolatable Transformer},
+    author    = {Yutao Sun and Li Dong and Barun Patra and Shuming Ma and Shaohan Huang and Alon Benhaim and Vishrav Chaudhary and Xia Song and Furu Wei},
+    year      = {2022}
+}
+```
