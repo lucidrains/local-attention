@@ -63,7 +63,8 @@ class LocalAttention(nn.Module):
         autopad = False,
         exact_windowsize = False,
         scale = None,
-        use_xpos = False
+        use_xpos = False,
+        xpos_scale_base = None
     ):
         super().__init__()
         look_forward = default(look_forward, 0 if causal else 1)
@@ -92,7 +93,12 @@ class LocalAttention(nn.Module):
         if exists(rel_pos_emb_config) or exists(dim):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
             if exists(rel_pos_emb_config):
                 dim = rel_pos_emb_config[0]
-            self.rel_pos = SinusoidalEmbeddings(dim, use_xpos = use_xpos, scale_base = window_size // 2)
+
+            self.rel_pos = SinusoidalEmbeddings(
+                dim,
+                use_xpos = use_xpos,
+                scale_base = default(xpos_scale_base, window_size // 2)
+            )
 
     def forward(self, q, k, v, mask = None, input_mask = None, window_size = None):
         mask = default(mask, input_mask)
