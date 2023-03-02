@@ -63,6 +63,7 @@ class LocalAttention(nn.Module):
         autopad = False,
         exact_windowsize = False,
         scale = None,
+        use_rotary_pos_emb = True,
         use_xpos = False,
         xpos_scale_base = None
     ):
@@ -90,7 +91,7 @@ class LocalAttention(nn.Module):
         self.rel_pos = None
         self.use_xpos = use_xpos
 
-        if exists(rel_pos_emb_config) or exists(dim):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
+        if use_rotary_pos_emb and (exists(rel_pos_emb_config) or exists(dim)):  # backwards compatible with old `rel_pos_emb_config` deprecated argument
             if exists(rel_pos_emb_config):
                 dim = rel_pos_emb_config[0]
 
@@ -100,7 +101,8 @@ class LocalAttention(nn.Module):
                 scale_base = default(xpos_scale_base, window_size // 2)
             )
 
-    def forward(self, q, k, v, mask = None, input_mask = None, window_size = None):
+    def forward(
+        self, q, k, v, mask = None, input_mask = None, attn_bias = None, window_size = None):
         mask = default(mask, input_mask)
 
         assert not (exists(window_size) and not self.use_xpos), 'cannot perform window size extrapolation if xpos is not turned on'
@@ -160,6 +162,9 @@ class LocalAttention(nn.Module):
         bq_k = rearrange(bq_k, '... j -> ... 1 j')
 
         sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
+
+        if exists(attn_bias):
+            sim = sim + attn_bias
 
         mask_value = max_neg_value(sim)
 

@@ -42,7 +42,8 @@ model = LocalTransformer(
     depth = 6,
     causal = True,
     local_attn_window_size = 256,
-    max_seq_len = SEQ_LEN
+    max_seq_len = SEQ_LEN,
+    use_dynamic_pos_bias = True
 ).cuda()
 
 # prepare enwik8 data

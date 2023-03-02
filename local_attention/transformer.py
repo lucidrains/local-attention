@@ -79,7 +79,7 @@ class LocalMHA(nn.Module):
 
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
-    def forward(self, x, mask = None):
+    def forward(self, x, mask = None, attn_bias = None):
         if exists(self.norm):
             x = self.norm(x)
 
@@ -91,7 +91,7 @@ class LocalMHA(nn.Module):
             q = q * self.q_scale
             k = k * self.k_scale
 
-        out = self.attn_fn(q, k, v, mask = mask)
+        out = self.attn_fn(q, k, v, mask = mask, attn_bias = attn_bias)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
@@ -114,6 +114,42 @@ def FeedForward(dim, mult = 4, dropout = 0.):
         nn.Linear(inner_dim, dim, bias = False)
     )
 
+# dynamic positional bias
+
+class DynamicPositionBias(nn.Module):
+    def __init__(
+        self,
+        dim,
+        heads
+    ):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(1, dim),
+            nn.SiLU(),
+            nn.Linear(dim, dim),
+            nn.SiLU(),
+            nn.Linear(dim, heads)
+        )
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+    
+    def forward(self, i, j):
+        device = self.device
+        assert j >= i
+
+        rel_dist = torch.arange(j, dtype = torch.float, device = device)
+        bias = self.mlp(rearrange(rel_dist, '... -> ... 1'))
+
+        i_seq = torch.arange(j - i, j, device = device)
+        j_seq = torch.arange(j, device = device)
+
+        rel_dist_indices = (rearrange(i_seq, 'i -> i 1') - rearrange(j_seq, 'j -> 1 j')).abs()
+
+        bias = rearrange(bias[rel_dist_indices], 'i j h -> h i j')
+        return bias
+
 # main transformer class
 
 class LocalTransformer(nn.Module):
@@ -134,6 +170,7 @@ class LocalTransformer(nn.Module):
         ignore_index = -1,
         use_xpos = False,
         xpos_scale_base = None,
+        use_dynamic_pos_bias = False,
         **kwargs
     ):
         super().__init__()
@@ -143,9 +180,14 @@ class LocalTransformer(nn.Module):
         self.max_seq_len = max_seq_len
         self.layers = nn.ModuleList([])
 
+        self.local_attn_window_size = local_attn_window_size
+        self.dynamic_pos_bias = None
+        if use_dynamic_pos_bias:
+            self.dynamic_pos_bias = DynamicPositionBias(dim = dim // 2, heads = heads)
+
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, xpos_scale_base = xpos_scale_base, prenorm = True, **kwargs),
+                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, xpos_scale_base = xpos_scale_base, use_rotary_pos_emb = not use_dynamic_pos_bias, prenorm = True, **kwargs),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
             ]))
 
@@ -188,8 +230,17 @@ class LocalTransformer(nn.Module):
         assert n <= self.max_seq_len
         x = x + self.pos_emb(torch.arange(n, device = device))
 
+        # dynamic pos bias
+
+        attn_bias = None
+        if exists(self.dynamic_pos_bias):
+            w = self.local_attn_window_size
+            attn_bias = self.dynamic_pos_bias(w, w * 2)
+
+        # go through layers
+
         for attn, ff in self.layers:
-            x = attn(x, mask = mask) + x
+            x = attn(x, mask = mask, attn_bias = attn_bias) + x
             x = ff(x) + x
 
         logits = self.to_logits(x)
