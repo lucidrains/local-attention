@@ -110,12 +110,6 @@ class LocalAttention(nn.Module):
         # https://github.com/arogozhnikov/einops/blob/master/docs/4-pack-and-unpack.ipynb
         (q, packed_shape), (k, _), (v, _) = map(lambda t: pack([t], '* n d'), (q, k, v))
 
-        # rotary embeddings
-
-        if exists(self.rel_pos):
-            pos_emb, scale = self.rel_pos(q)
-            q, k = apply_rotary_pos_emb(q, k, pos_emb, scale = scale)
-
         # auto padding
 
         if autopad:
@@ -136,7 +130,11 @@ class LocalAttention(nn.Module):
         seq = torch.arange(n, device = device)
         b_t = rearrange(seq, '(w n) -> 1 w n', w = windows, n = window_size)
 
+        # bucketing
+
         bq, bk, bv = map(lambda t: rearrange(t, 'b (w n) d -> b w n d', w = windows), (q, k, v))
+
+        bq = bq * scale
 
         look_around_kwargs = dict(
             backward =  look_backward,
@@ -147,13 +145,21 @@ class LocalAttention(nn.Module):
         bk = look_around(bk, **look_around_kwargs)
         bv = look_around(bv, **look_around_kwargs)
 
+        # rotary embeddings
+
+        if exists(self.rel_pos):
+            pos_emb, xpos_scale = self.rel_pos(bk)
+            bq, bk = apply_rotary_pos_emb(bq, bk, pos_emb, scale = xpos_scale)
+
+        # calculate positions for masking
+
         bq_t = b_t
         bq_k = look_around(b_t, **look_around_kwargs)
 
         bq_t = rearrange(bq_t, '... i -> ... i 1')
         bq_k = rearrange(bq_k, '... j -> ... 1 j')
 
-        sim = einsum('b h i e, b h j e -> b h i j', bq, bk) * scale
+        sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
 
         mask_value = max_neg_value(sim)
 

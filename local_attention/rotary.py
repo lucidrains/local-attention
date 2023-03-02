@@ -44,12 +44,15 @@ class SinusoidalEmbeddings(nn.Module):
         return freqs, scale
 
 def rotate_half(x):
-    x = rearrange(x, 'b ... (r d) -> b (...) r d', r = 2)
+    x = rearrange(x, 'b ... (r d) -> b ... r d', r = 2)
     x1, x2 = x.unbind(dim = -2)
     return torch.cat((-x2, x1), dim = -1)
 
 def apply_rotary_pos_emb(q, k, freqs, scale = 1):
+    q_len = q.shape[-2]
+    q_freqs = freqs[..., -q_len:, :]
+
     inv_scale = scale ** -1
-    q = (q * freqs.cos() * scale) + (rotate_half(q) * freqs.sin() * scale)
+    q = (q * q_freqs.cos() * scale) + (rotate_half(q) * q_freqs.sin() * scale)
     k = (k * freqs.cos() * inv_scale) + (rotate_half(k) * freqs.sin() * inv_scale)
     return q, k
