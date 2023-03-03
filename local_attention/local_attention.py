@@ -164,6 +164,10 @@ class LocalAttention(nn.Module):
         sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
 
         if exists(attn_bias):
+            heads = attn_bias.shape[0]
+            assert (b % heads) == 0
+
+            attn_bias = repeat(attn_bias, 'h i j -> (b h) 1 i j', b = b // heads)
             sim = sim + attn_bias
 
         mask_value = max_neg_value(sim)
