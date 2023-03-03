@@ -54,7 +54,7 @@ def apply_rotary_pos_emb(q, k, freqs, scale = 1):
 
     inv_scale = scale ** -1
 
-    if isinstance(scale, torch.Tensor):
+    if scale.ndim == 2:
         scale = scale[-q_len:, :]
 
     q = (q * q_freqs.cos() * scale) + (rotate_half(q) * q_freqs.sin() * scale)
