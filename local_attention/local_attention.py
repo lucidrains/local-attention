@@ -102,7 +102,14 @@ class LocalAttention(nn.Module):
             )
 
     def forward(
-        self, q, k, v, mask = None, input_mask = None, attn_bias = None, window_size = None):
+        self,
+        q, k, v,
+        mask = None,
+        input_mask = None,
+        attn_bias = None,
+        window_size = None
+    ):
+
         mask = default(mask, input_mask)
 
         assert not (exists(window_size) and not self.use_xpos), 'cannot perform window size extrapolation if xpos is not turned on'
@@ -164,6 +171,10 @@ class LocalAttention(nn.Module):
         sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
 
         if exists(attn_bias):
+            heads = attn_bias.shape[0]
+            assert (b % heads) == 0
+
+            attn_bias = repeat(attn_bias, 'h i j -> (b h) 1 i j', b = b // heads)
             sim = sim + attn_bias
 
         mask_value = max_neg_value(sim)
