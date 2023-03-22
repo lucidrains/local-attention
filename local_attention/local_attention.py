@@ -168,6 +168,8 @@ class LocalAttention(nn.Module):
         bq_t = rearrange(bq_t, '... i -> ... i 1')
         bq_k = rearrange(bq_k, '... j -> ... 1 j')
 
+        pad_mask = bq_k == pad_value
+
         sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
 
         if exists(attn_bias):
@@ -194,12 +196,18 @@ class LocalAttention(nn.Module):
             sim = sim.masked_fill(causal_mask, mask_value)
             del causal_mask
 
-        # mask out padding value
+        # masking out for exact window size for non-causal
+        # as well as masking out for padding value
 
-        if autopad and needed_pad:
-            pad_mask = bq_k == pad_value
+        if not causal and self.exact_windowsize:
+            max_backward_window_size = (self.window_size * self.look_backward)
+            max_forward_window_size = (self.window_size * self.look_forward)
+            window_mask = ((bq_k - max_forward_window_size) > bq_t) | (bq_t > (bq_k + max_backward_window_size)) | pad_mask
+            sim = sim.masked_fill(window_mask, mask_value)
+        else:
             sim = sim.masked_fill(pad_mask, mask_value)
-            del pad_mask
+
+        # take care of key padding mask passed in
 
         if exists(mask):
             batch = mask.shape[0]
