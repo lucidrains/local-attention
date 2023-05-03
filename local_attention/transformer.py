@@ -11,6 +11,9 @@ from local_attention.local_attention import LocalAttention
 def exists(val):
     return val is not None
 
+def default(val, d):
+    return val if exists(val) else d
+
 def l2norm(t):
     return F.normalize(t, dim = -1)
 
@@ -49,6 +52,7 @@ class LocalMHA(nn.Module):
         qk_scale = 8,
         use_xpos = False,
         xpos_scale_base = None,
+        exact_windowsize = None,
         **kwargs
     ):
         super().__init__()        
@@ -71,7 +75,7 @@ class LocalMHA(nn.Module):
             causal = causal,
             autopad = True,
             scale = (qk_scale if qk_rmsnorm else None),
-            exact_windowsize = True,
+            exact_windowsize = default(exact_windowsize, True),
             use_xpos = use_xpos,
             xpos_scale_base = xpos_scale_base,
             **kwargs
