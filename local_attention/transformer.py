@@ -53,6 +53,7 @@ class LocalMHA(nn.Module):
         use_xpos = False,
         xpos_scale_base = None,
         exact_windowsize = None,
+        gate_values_per_head = False,
         **kwargs
     ):
         super().__init__()        
@@ -81,6 +82,13 @@ class LocalMHA(nn.Module):
             **kwargs
         )
 
+        self.to_v_gate = None
+
+        if gate_values_per_head:
+            self.to_v_gate = nn.Sequential(
+                nn.Linear(dim, heads)
+            )
+
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
     def forward(self, x, mask = None, attn_bias = None):
@@ -96,6 +104,11 @@ class LocalMHA(nn.Module):
             k = k * self.k_scale
 
         out = self.attn_fn(q, k, v, mask = mask, attn_bias = attn_bias)
+
+        if exists(self.to_v_gate):
+            gates = self.to_v_gate(x)
+            gates = rearrange(gates, 'b n h -> b h n 1')
+            out = out * gates.sigmoid()
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
