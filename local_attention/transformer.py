@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn import Module, ModuleList
 
-from einops import rearrange
+from einops import rearrange, einsum
 
 from local_attention.local_attention import LocalAttention
 
@@ -37,7 +38,7 @@ def top_k(logits, thres = 0.9):
 
 # multi-head attention
 
-class LocalMHA(nn.Module):
+class LocalMHA(Module):
     def __init__(
         self,
         *,
@@ -70,13 +71,17 @@ class LocalMHA(nn.Module):
             self.q_scale = nn.Parameter(torch.ones(dim_head))
             self.k_scale = nn.Parameter(torch.ones(dim_head))
 
+        self.causal = causal
+        self.window_size = window_size
+        self.exact_windowsize = default(exact_windowsize, True)
+
         self.attn_fn = LocalAttention(
             dim = dim_head,
             window_size = window_size,
             causal = causal,
             autopad = True,
             scale = (qk_scale if qk_rmsnorm else None),
-            exact_windowsize = default(exact_windowsize, True),
+            exact_windowsize = self.exact_windowsize,
             use_xpos = use_xpos,
             xpos_scale_base = xpos_scale_base,
             **kwargs
@@ -91,7 +96,14 @@ class LocalMHA(nn.Module):
 
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
-    def forward(self, x, mask = None, attn_bias = None):
+    def forward(
+        self,
+        x,
+        mask = None,
+        attn_bias = None,
+        cache = None,
+        return_cache = False
+    ):
         if exists(self.norm):
             x = self.norm(x)
 
@@ -103,7 +115,26 @@ class LocalMHA(nn.Module):
             q = q * self.q_scale
             k = k * self.k_scale
 
-        out = self.attn_fn(q, k, v, mask = mask, attn_bias = attn_bias)
+        if exists(cache):
+            assert self.causal and not exists(attn_bias) and not exists(mask) and self.exact_windowsize, 'only allow caching for specific configuration'
+            ck, cv = cache
+
+            q = q * (q.shape[-1] ** -0.5)
+
+            k = torch.cat((ck, k), dim = -2)
+            v = torch.cat((cv, v), dim = -2)
+
+            k, v = tuple(t[..., -(self.window_size + 1):, :] for t in (k, v))
+
+            sim = einsum(q, k, 'b h i d, b h j d -> b h i j')
+            attn = sim.softmax(dim = -1)
+            out = einsum(attn, v, 'b h i j, b h j d -> b h i d')
+
+        else:
+            out = self.attn_fn(q, k, v, mask = mask, attn_bias = attn_bias)
+
+        if return_cache:
+            kv = torch.stack((k, v))
 
         if exists(self.to_v_gate):
             gates = self.to_v_gate(x)
@@ -111,11 +142,16 @@ class LocalMHA(nn.Module):
             out = out * gates.sigmoid()
 
         out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.to_out(out)
+        out = self.to_out(out)
+
+        if not return_cache:
+            return out
+
+        return out, kv
 
 # feedforward
 
-class GEGLU(nn.Module):
+class GEGLU(Module):
     def forward(self, x):
         x, gate = x.chunk(2, dim = -1)
         return x * F.gelu(gate)
@@ -133,7 +169,7 @@ def FeedForward(dim, mult = 4, dropout = 0.):
 
 # dynamic positional bias
 
-class DynamicPositionBias(nn.Module):
+class DynamicPositionBias(Module):
     def __init__(
         self,
         dim,
@@ -169,7 +205,7 @@ class DynamicPositionBias(nn.Module):
 
 # main transformer class
 
-class LocalTransformer(nn.Module):
+class LocalTransformer(Module):
     def __init__(
         self,
         *,
@@ -195,7 +231,7 @@ class LocalTransformer(nn.Module):
         self.pos_emb = nn.Embedding(max_seq_len, dim)
 
         self.max_seq_len = max_seq_len
-        self.layers = nn.ModuleList([])
+        self.layers = ModuleList([])
 
         self.local_attn_window_size = local_attn_window_size
         self.dynamic_pos_bias = None
@@ -237,7 +273,12 @@ class LocalTransformer(nn.Module):
 
         return out[:, n:]
 
-    def forward(self, x, mask = None, return_loss = False):
+    def forward(
+        self,
+        x,
+        mask = None,
+        return_loss = False
+    ):
         if return_loss:
             x, labels = x[:, :-1], x[:, 1:]
 

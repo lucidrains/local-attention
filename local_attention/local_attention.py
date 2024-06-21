@@ -2,6 +2,7 @@ import math
 
 import torch
 from torch import nn, einsum
+from torch.nn import Module
 import torch.nn.functional as F
 
 from einops import rearrange, repeat, pack, unpack
@@ -49,7 +50,7 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
 
 # main class
 
-class LocalAttention(nn.Module):
+class LocalAttention(Module):
     def __init__(
         self,
         window_size,
