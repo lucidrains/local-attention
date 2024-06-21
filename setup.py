@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'local-attention',
   packages = find_packages(),
-  version = '1.9.1',
+  version = '1.9.2',
   license='MIT',
   description = 'Local attention, window with lookback, for language modeling',
   long_description_content_type = 'text/markdown',
@@ -18,6 +18,12 @@ setup(
   install_requires=[
     'einops>=0.6.0',
     'torch'
+  ],
+  setup_requires=[
+    'pytest-runner',
+  ],
+  tests_require=[
+    'pytest'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',

@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat, pack, unpack
 
-from local_attention.rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
+from local_attention.rotary import SinusoidalEmbeddings
 
 # constant
 
@@ -159,7 +159,7 @@ class LocalAttention(Module):
 
         if exists(self.rel_pos):
             pos_emb, xpos_scale = self.rel_pos(bk)
-            bq, bk = apply_rotary_pos_emb(bq, bk, pos_emb, scale = xpos_scale)
+            bq, bk = self.rel_pos.apply_rotary_pos_emb(bq, bk, pos_emb, scale = xpos_scale)
 
         # calculate positions for masking
 

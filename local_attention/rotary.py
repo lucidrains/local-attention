@@ -8,15 +8,16 @@ from einops import rearrange
 def exists(val):
     return val is not None
 
-class SinusoidalEmbeddings(nn.Module):
+class SinusoidalEmbeddings(Module):
     def __init__(
         self,
         dim,
         scale_base = None,
-        use_xpos = False
+        use_xpos = False,
+        theta = 10000
     ):
         super().__init__()
-        inv_freq = 1. / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1. / (theta ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer('inv_freq', inv_freq)
 
         # xpos related
@@ -28,6 +29,8 @@ class SinusoidalEmbeddings(nn.Module):
 
         scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
         self.register_buffer('scale', scale, persistent = False)
+
+        self.apply_rotary_pos_emb = apply_rotary_pos_emb
 
     @autocast(enabled = False)
     def forward(self, x):

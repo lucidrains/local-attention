@@ -117,12 +117,18 @@ class LocalMHA(Module):
 
         if exists(cache):
             assert self.causal and not exists(attn_bias) and not exists(mask) and self.exact_windowsize, 'only allow caching for specific configuration'
+
             ck, cv = cache
 
             q = q * (q.shape[-1] ** -0.5)
 
             k = torch.cat((ck, k), dim = -2)
             v = torch.cat((cv, v), dim = -2)
+
+            if exists(self.attn_fn.rel_pos):
+                rel_pos = self.attn_fn.rel_pos
+                pos_emb, xpos_scale = rel_pos(k)
+                q, k = rel_pos.apply_rotary_pos_emb(q, k, pos_emb, scale = xpos_scale)
 
             k, v = tuple(t[..., -(self.window_size + 1):, :] for t in (k, v))
 
