@@ -4,15 +4,17 @@ import torch
 from local_attention.transformer import LocalMHA
 
 @pytest.mark.parametrize('use_rotary_pos_emb', (True, False))
+@pytest.mark.parametrize('exact_windowsize', (True, False))
 def test_cache(
-        use_rotary_pos_emb
-    ):
+    use_rotary_pos_emb,
+    exact_windowsize
+):
 
     mha = LocalMHA(
       dim = 512,
       gate_values_per_head = False,
       window_size = 1000,
-      exact_windowsize = True,
+      exact_windowsize = exact_windowsize,
       use_rotary_pos_emb = use_rotary_pos_emb,
       causal = True
     )

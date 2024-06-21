@@ -104,6 +104,8 @@ class LocalMHA(Module):
         cache = None,
         return_cache = False
     ):
+        seq_len = x.shape[-2]
+
         if exists(self.norm):
             x = self.norm(x)
 
@@ -116,7 +118,9 @@ class LocalMHA(Module):
             k = k * self.k_scale
 
         if exists(cache):
-            assert self.causal and not exists(attn_bias) and not exists(mask) and self.exact_windowsize, 'only allow caching for specific configuration'
+            assert seq_len == 1
+
+            assert self.causal and not exists(attn_bias) and not exists(mask), 'only allow caching for specific configuration'
 
             ck, cv = cache
 
@@ -130,7 +134,15 @@ class LocalMHA(Module):
                 pos_emb, xpos_scale = rel_pos(k)
                 q, k = rel_pos.apply_rotary_pos_emb(q, k, pos_emb, scale = xpos_scale)
 
-            k, v = tuple(t[..., -(self.window_size + 1):, :] for t in (k, v))
+            effective_window_size = self.attn_fn.look_backward * self.window_size
+
+            if self.exact_windowsize:
+                kv_start_index = -(effective_window_size + 1)
+            else:
+                seq_len = k.shape[-2]
+                kv_start_index = -(effective_window_size + (seq_len % self.window_size))
+
+            k, v = tuple(t[..., kv_start_index:, :] for t in (k, v))
 
             sim = einsum(q, k, 'b h i d, b h j d -> b h i j')
             attn = sim.softmax(dim = -1)
