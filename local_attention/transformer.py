@@ -6,6 +6,7 @@ from torch.nn import Module, ModuleList
 from einops import rearrange, einsum
 
 from local_attention.local_attention import LocalAttention
+from local_attention.rotary import apply_rotary_pos_emb
 
 # helper function
 
@@ -120,7 +121,7 @@ class LocalMHA(Module):
         if exists(cache):
             assert seq_len == 1
 
-            assert self.causal and not exists(attn_bias) and not exists(mask), 'only allow caching for specific configuration'
+            assert self.causal and not exists(mask), 'only allow caching for specific configuration'
 
             ck, cv = cache
 
@@ -128,11 +129,6 @@ class LocalMHA(Module):
 
             k = torch.cat((ck, k), dim = -2)
             v = torch.cat((cv, v), dim = -2)
-
-            if exists(self.attn_fn.rel_pos):
-                rel_pos = self.attn_fn.rel_pos
-                pos_emb, xpos_scale = rel_pos(k)
-                q, k = rel_pos.apply_rotary_pos_emb(q, k, pos_emb, scale = xpos_scale)
 
             effective_window_size = self.attn_fn.look_backward * self.window_size
 
@@ -144,7 +140,19 @@ class LocalMHA(Module):
 
             k, v = tuple(t[..., kv_start_index:, :] for t in (k, v))
 
+            if exists(self.attn_fn.rel_pos):
+                rel_pos = self.attn_fn.rel_pos
+                pos_emb, xpos_scale = rel_pos(k)
+                q, k = apply_rotary_pos_emb(q, k, pos_emb, scale = xpos_scale)
+
             sim = einsum(q, k, 'b h i d, b h j d -> b h i j')
+
+            if exists(attn_bias):
+                k_len = k.shape[-2]
+                attn_bias = attn_bias[..., -1:, -k_len:]
+                assert attn_bias.shape[-1] == sim.shape[-1]
+                sim = sim + attn_bias
+
             attn = sim.softmax(dim = -1)
             out = einsum(attn, v, 'b h i j, b h j d -> b h i d')
 
