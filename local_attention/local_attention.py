@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat, pack, unpack
 
-from local_attention.rotary import SinusoidalEmbeddings
+from local_attention.rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
 
 # constant
 

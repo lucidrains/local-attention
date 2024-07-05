@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'local-attention',
   packages = find_packages(),
-  version = '1.9.3',
+  version = '1.9.4',
   license='MIT',
   description = 'Local attention, window with lookback, for language modeling',
   long_description_content_type = 'text/markdown',
@@ -16,7 +16,7 @@ setup(
     'artificial intelligence'
   ],
   install_requires=[
-    'einops>=0.6.0',
+    'einops>=0.8.0',
     'torch'
   ],
   setup_requires=[
