@@ -286,6 +286,8 @@ class LocalTransformer(Module):
         filter_thres = 0.9,
         **kwargs
     ):
+        assert temperature >= 0.
+
         n, device = prime.shape[1], prime.device
 
         out = prime
@@ -293,8 +295,13 @@ class LocalTransformer(Module):
         for _ in range(seq_len):
             logits = self.forward(out[:, -self.max_seq_len:], **kwargs)
             filtered_logits = top_k(logits[:, -1], thres = filter_thres)
-            probs = F.softmax(filtered_logits / temperature, dim = -1)
-            sampled = torch.multinomial(probs, 1)
+
+            if temperature == 0.:
+                sampled = filtered_logits.argmax(dim = -1, keepdim = True)
+            else:
+                probs = F.softmax(filtered_logits / temperature, dim = -1)
+                sampled = torch.multinomial(probs, 1)
+
             out = torch.cat((out, sampled), dim = -1)
 
         return out[:, n:]
