@@ -30,7 +30,7 @@ class SinusoidalEmbeddings(Module):
         scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
         self.register_buffer('scale', scale, persistent = False)
 
-        self.apply_rotary_pos_emb = apply_rotary_pos_emb
+        self.apply_rotary_pos_emb = staticmethod(apply_rotary_pos_emb)
 
     @autocast(enabled = False)
     def forward(self, x):
