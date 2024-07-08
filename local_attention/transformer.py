@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -231,6 +233,8 @@ class DynamicPositionBias(Module):
 
 # main transformer class
 
+Cache = namedtuple('Cache', ['cache_kv', 'maybe_cached_attn_bias'])
+
 class LocalTransformer(Module):
     def __init__(
         self,
@@ -284,6 +288,7 @@ class LocalTransformer(Module):
         seq_len,
         temperature = 1.,
         filter_thres = 0.9,
+        use_kv_cache = True,
         **kwargs
     ):
         assert temperature >= 0.
@@ -292,8 +297,20 @@ class LocalTransformer(Module):
 
         out = prime
 
+        cache = None
+
         for _ in range(seq_len):
-            logits = self.forward(out[:, -self.max_seq_len:], **kwargs)
+
+            logits, new_cache = self.forward(
+                out[:, -self.max_seq_len:],
+                cache = cache,
+                return_cache = True,
+                **kwargs
+            )
+
+            if use_kv_cache:
+                cache = new_cache
+
             filtered_logits = top_k(logits[:, -1], thres = filter_thres)
 
             if temperature == 0.:
@@ -310,7 +327,9 @@ class LocalTransformer(Module):
         self,
         x,
         mask = None,
-        return_loss = False
+        cache = None,
+        return_loss = False,
+        return_cache = False
     ):
         if return_loss:
             x, labels = x[:, :-1], x[:, 1:]
@@ -321,24 +340,62 @@ class LocalTransformer(Module):
         assert n <= self.max_seq_len
         x = x + self.pos_emb(torch.arange(n, device = device))
 
+        # handle old and new cache
+
+        has_cache = exists(cache)
+        cached_kv = cached_attn_bias = None
+
+        if has_cache:
+            cached_kv, cached_attn_bias = cache
+
+        new_cached_kv = []
+        iter_cached_kv = iter(default(cached_kv, []))
+
+        if has_cache:
+            x = x[:, -1:]
+
         # dynamic pos bias
 
-        attn_bias = None
-        if exists(self.dynamic_pos_bias):
+        attn_bias = cached_attn_bias
+
+        if not exists(attn_bias) and exists(self.dynamic_pos_bias):
             w = self.local_attn_window_size
             attn_bias = self.dynamic_pos_bias(w, w * 2)
 
         # go through layers
 
         for attn, ff in self.layers:
-            x = attn(x, mask = mask, attn_bias = attn_bias) + x
+            attn_out, layer_cached_kv = attn(
+                x,
+                mask = mask,
+                attn_bias = attn_bias,
+                return_cache = True,
+                cache = next(iter_cached_kv, None)
+            )
+
+            new_cached_kv.append(layer_cached_kv)
+
+            x = x + attn_out
+
             x = ff(x) + x
+
+        # to logits
 
         logits = self.to_logits(x)
 
         if not return_loss:
-            return logits
 
-        logits = rearrange(logits, 'b n c -> b c n')
-        loss = F.cross_entropy(logits, labels, ignore_index = self.ignore_index)
+            if not return_cache:
+                return logits
+
+            return logits, Cache(new_cached_kv, attn_bias)
+
+        # cross entropy loss
+
+        loss = F.cross_entropy(
+            rearrange(logits, 'b n c -> b c n'),
+            labels,
+            ignore_index = self.ignore_index
+        )
+
         return loss
