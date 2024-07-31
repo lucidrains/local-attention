@@ -30,7 +30,7 @@ class SinusoidalEmbeddings(Module):
         scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
         self.register_buffer('scale', scale, persistent = False)
 
-    @autocast(enabled = False)
+    @autocast('cuda', enabled = False)
     def forward(self, x):
         seq_len, device = x.shape[-2], x.device
 
@@ -52,7 +52,7 @@ def rotate_half(x):
     x1, x2 = x.unbind(dim = -2)
     return torch.cat((-x2, x1), dim = -1)
 
-@autocast(enabled = False)
+@autocast('cuda', enabled = False)
 def apply_rotary_pos_emb(q, k, freqs, scale = 1):
     q_len = q.shape[-2]
     q_freqs = freqs[..., -q_len:, :]
