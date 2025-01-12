@@ -1,3 +1,5 @@
+from __future__ import annotations
+from copy import deepcopy
 from collections import namedtuple
 
 import torch
@@ -254,6 +256,8 @@ class LocalTransformer(Module):
         use_xpos = False,
         xpos_scale_base = None,
         use_dynamic_pos_bias = False,
+        global_attn_layer: Module | None = None,
+        layers_insert_global_attn: tuple[int, ...] | None = None,
         **kwargs
     ):
         super().__init__()
@@ -268,7 +272,22 @@ class LocalTransformer(Module):
         if use_dynamic_pos_bias:
             self.dynamic_pos_bias = DynamicPositionBias(dim = dim // 2, heads = heads)
 
-        for _ in range(depth):
+        # allow for inserting global attention or memory layers
+
+        layers_insert_global_attn = default(layers_insert_global_attn, tuple(range(1, depth + 1)))
+        assert all([0 < layer <= depth for layer in layers_insert_global_attn])
+
+        global_attn_layers = set(layers_insert_global_attn)
+
+        self.global_layers = ModuleList([])
+
+        # define modules throughout layers
+
+        for index in range(depth):
+            layer = index + 1
+
+            self.global_layers.append(deepcopy(global_attn_layer) if exists(global_attn_layer) and layer in global_attn_layers else None)
+
             self.layers.append(nn.ModuleList([
                 LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, xpos_scale_base = xpos_scale_base, use_rotary_pos_emb = not use_dynamic_pos_bias, prenorm = True, **kwargs),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
@@ -364,7 +383,11 @@ class LocalTransformer(Module):
 
         # go through layers
 
-        for attn, ff in self.layers:
+        for (attn, ff), global_layer in zip(self.layers, self.global_layers):
+
+            if exists(global_layer):
+                x = global_layer(x) + x
+
             attn_out, layer_cached_kv = attn(
                 x,
                 mask = mask,
