@@ -12,6 +12,8 @@ from einops import rearrange, einsum
 from local_attention.local_attention import LocalAttention
 from local_attention.rotary import apply_rotary_pos_emb
 
+from hyper_connections import get_init_and_expand_reduce_stream_functions
+
 # helper function
 
 def exists(val):
@@ -258,6 +260,7 @@ class LocalTransformer(Module):
         use_dynamic_pos_bias = False,
         global_attn_layer: Module | None = None,
         layers_insert_global_attn: tuple[int, ...] | None = None,
+        num_residual_streams = 4,
         **kwargs
     ):
         super().__init__()
@@ -271,6 +274,8 @@ class LocalTransformer(Module):
         self.dynamic_pos_bias = None
         if use_dynamic_pos_bias:
             self.dynamic_pos_bias = DynamicPositionBias(dim = dim // 2, heads = heads)
+
+        init_hyper_conn, self.expand_streams, self.reduce_streams = get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
 
         # allow for inserting global attention or memory layers
 
@@ -286,11 +291,11 @@ class LocalTransformer(Module):
         for index in range(depth):
             layer = index + 1
 
-            self.global_layers.append(deepcopy(global_attn_layer) if exists(global_attn_layer) and layer in global_attn_layers else None)
+            self.global_layers.append(init_hyper_conn(dim = dim, branch = deepcopy(global_attn_layer)) if exists(global_attn_layer) and layer in global_attn_layers else None)
 
             self.layers.append(nn.ModuleList([
-                LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, xpos_scale_base = xpos_scale_base, use_rotary_pos_emb = not use_dynamic_pos_bias, prenorm = True, **kwargs),
-                FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
+                init_hyper_conn(dim = dim, branch = LocalMHA(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, causal = causal, window_size = local_attn_window_size, use_xpos = use_xpos, xpos_scale_base = xpos_scale_base, use_rotary_pos_emb = not use_dynamic_pos_bias, prenorm = True, **kwargs)),
+                init_hyper_conn(dim = dim, branch = FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout))
             ]))
 
         self.ignore_index = ignore_index
@@ -383,12 +388,14 @@ class LocalTransformer(Module):
 
         # go through layers
 
+        x = self.expand_streams(x)
+
         for (attn, ff), global_layer in zip(self.layers, self.global_layers):
 
             if exists(global_layer):
-                x = global_layer(x) + x
+                x = global_layer(x)
 
-            attn_out, layer_cached_kv = attn(
+            x, layer_cached_kv = attn(
                 x,
                 mask = mask,
                 attn_bias = attn_bias,
@@ -398,9 +405,9 @@ class LocalTransformer(Module):
 
             new_cached_kv.append(layer_cached_kv)
 
-            x = x + attn_out
+            x = ff(x)
 
-            x = ff(x) + x
+        x = self.reduce_streams(x)
 
         # to logits
 
