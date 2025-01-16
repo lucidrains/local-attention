@@ -45,7 +45,7 @@ def look_around(x, backward = 1, forward = 0, pad_value = -1, dim = 2):
     dims = (len(x.shape) - dim) * (0, 0)
     padded_x = F.pad(x, (*dims, backward, forward), value = pad_value)
     tensors = padded_x.unfold(1, forward + backward + 1,1)
-    return torch.cat(tensors.unbind(-1), dim = dim)
+    return tensors.movedim(-1,dim).flatten(dim, dim + 1)
 
 # main class
 
