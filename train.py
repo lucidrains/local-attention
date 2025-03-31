@@ -1,5 +1,5 @@
 """
-This training script can be run both on a single gpu in debug mode,
+This training script can be run both on a single gpu
 and also in a larger training run with distributed data parallel (ddp).
 
 To run on a single GPU, example:
@@ -34,7 +34,7 @@ from local_attention import LocalTransformer
 
 NUM_BATCHES = int(1e5)
 BATCH_SIZE = 4
-GRADIENT_ACCUMULATE_EVERY = 5*4
+GRADIENT_ACCUMULATE_EVERY = 4*4 # should be multiple of num_process if DDP
 LEARNING_RATE = 2e-4
 VALIDATE_EVERY  = 100
 GENERATE_EVERY  = 500
