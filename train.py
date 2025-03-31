@@ -2,11 +2,14 @@ import random
 import tqdm
 import gzip
 import numpy as np
+import os
 
 import torch
 from torch.optim import Adam
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from local_attention import LocalTransformer
 
@@ -20,7 +23,7 @@ VALIDATE_EVERY  = 100
 GENERATE_EVERY  = 500
 GENERATE_LENGTH = 2048
 SEQ_LEN = 2048
-
+MIN_GPU_MEMORY = 20 * 1024**3  # 20GB in bytes
 # helpers
 
 def cycle(loader):
@@ -34,6 +37,29 @@ def decode_token(token):
 def decode_tokens(tokens):
     return ''.join(list(map(decode_token, tokens)))
 
+def check_gpu_memory(min_memory_required):
+    """
+    Check if the current GPU has enough free memory.
+    """
+    local_rank = int(os.environ["LOCAL_RANK"])
+    free_memory = torch.cuda.mem_get_info(local_rank)[0]  # Free memory in bytes
+    return free_memory >= min_memory_required
+
+def setup_distributed():
+    # initialize distributed training
+
+    dist.init_process_group(backend='nccl')
+    local_rank = dist.get_rank()
+    torch.cuda.set_device(local_rank)
+
+     # Check GPU memory
+    if not check_gpu_memory(MIN_GPU_MEMORY):
+        print(f"GPU {local_rank} does not have enough memory. Skipping...")
+        dist.destroy_process_group()
+        exit(0)
+
+setup_distributed()
+
 # instantiate GPT-like decoder model
 
 model = LocalTransformer(
@@ -45,6 +71,9 @@ model = LocalTransformer(
     max_seq_len = SEQ_LEN,
     use_dynamic_pos_bias = True
 ).cuda()
+
+# wrap model for distributed training
+model = DDP(model, device_ids=[int(os.environ["LOCAL_RANK"])])
 
 # prepare enwik8 data
 
@@ -69,8 +98,13 @@ class TextSamplerDataset(Dataset):
 
 train_dataset = TextSamplerDataset(data_train, SEQ_LEN)
 val_dataset   = TextSamplerDataset(data_val, SEQ_LEN)
-train_loader  = cycle(DataLoader(train_dataset, batch_size = BATCH_SIZE))
-val_loader    = cycle(DataLoader(val_dataset, batch_size = BATCH_SIZE))
+
+# create distributed data loaders
+train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset)
+
+train_loader  = cycle(DataLoader(train_dataset, batch_size = BATCH_SIZE, sampler=train_sampler))
+val_loader    = cycle(DataLoader(val_dataset, batch_size = BATCH_SIZE, sampler=val_sampler))
 
 # optimizer
 
