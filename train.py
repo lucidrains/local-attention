@@ -61,7 +61,6 @@ def setup_distributed():
 setup_distributed()
 
 # instantiate GPT-like decoder model
-
 model = LocalTransformer(
     num_tokens = 256,
     dim = 512,
@@ -73,15 +72,32 @@ model = LocalTransformer(
 ).cuda()
 
 # wrap model for distributed training
-model = DDP(model, device_ids=[int(os.environ["LOCAL_RANK"])])
+local_rank = int(os.environ["LOCAL_RANK"])
+model = DDP(model, device_ids=[local_rank])
 
 # prepare enwik8 data
 
-with gzip.open('./data/enwik8.gz') as file:
-    X = np.fromstring(file.read(int(95e6)), dtype=np.uint8)
-    trX, vaX = np.split(X, [int(90e6)])
-    data_train, data_val = torch.from_numpy(trX), torch.from_numpy(vaX)
+if local_rank == 0:
+    with gzip.open('./data/enwik8.gz') as file:
+        print(f"[Process {local_rank}] Unzipping enwik8.gz...")
+        X = np.frombuffer(file.read(int(95e6)), dtype=np.uint8)
+        trX, vaX = np.split(X, [int(90e6)])
+        trX, vaX = torch.from_numpy(trX).cuda(), torch.from_numpy(vaX).cuda()
+else:
+    trX = torch.empty(int(90e6), dtype=torch.uint8).cuda()
+    vaX = torch.empty(int(5e6), dtype=torch.uint8).cuda()
 
+    print(f"[Process {local_rank}] Waiting for data loading to complete...")
+
+# Synchronize all processes
+dist.barrier()
+dist.broadcast(trX, src=0)
+dist.broadcast(vaX, src=0)
+
+if local_rank != 0:
+    print(f"[Process {local_rank}] Data broadcasted to all processes.")
+
+data_train, data_val = trX, vaX
 class TextSamplerDataset(Dataset):
     def __init__(self, data, seq_len):
         super().__init__()
@@ -119,7 +135,7 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
         loss = model(next(train_loader), return_loss = True)
         loss.backward()
 
-    print(f'training loss: {loss.item()}')
+    print(f'Process {local_rank}: training loss: {loss.item()}')
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optim.step()
     optim.zero_grad()
@@ -136,6 +152,6 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
         prime = decode_tokens(inp)
         print(f'%s \n\n %s', (prime, '*' * 100))
 
-        sample = model.generate(inp[None, ...], GENERATE_LENGTH)
+        sample = model.module.generate(inp[None, ...], GENERATE_LENGTH)
         output_str = decode_tokens(sample[0])
         print(output_str)
