@@ -34,7 +34,7 @@ from local_attention import LocalTransformer
 
 NUM_BATCHES = int(1e5)
 BATCH_SIZE = 4
-GRADIENT_ACCUMULATE_EVERY = 4*4 # should be multiple of num_process if DDP
+GRADIENT_ACCUMULATE_EVERY = 4*4 # should be multiple of num_process if run with DDP
 LEARNING_RATE = 2e-4
 VALIDATE_EVERY  = 100
 GENERATE_EVERY  = 500
@@ -100,7 +100,7 @@ raw_model = model.module if ddp else model # unwrap DDP container if needed
 
 if master_process:
     with gzip.open('./data/enwik8.gz') as file:
-        print("[Process 0] Unzipping enwik8.gz...")
+        print("Unzipping enwik8.gz...")
         X = np.frombuffer(file.read(int(95e6)), dtype=np.uint8)
         trX, vaX = np.split(X, [int(90e6)])
         trX = torch.from_numpy(np.copy(trX)).to(DEVICE)
