@@ -264,8 +264,12 @@ class LocalTransformer(Module):
         **kwargs
     ):
         super().__init__()
-        self.token_emb = nn.Embedding(num_tokens, dim)
-        self.pos_emb = nn.Embedding(max_seq_len, dim)
+
+        self.has_embed_unembed = exists(num_tokens)
+
+        if self.has_embed_unembed:
+            self.token_emb = nn.Embedding(num_tokens, dim)
+            self.pos_emb = nn.Embedding(max_seq_len, dim)
 
         self.max_seq_len = max_seq_len
         self.layers = ModuleList([])
@@ -299,10 +303,12 @@ class LocalTransformer(Module):
             ]))
 
         self.ignore_index = ignore_index
-        self.to_logits = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, num_tokens, bias = False)
-        )
+
+        if self.has_embed_unembed:
+            self.to_logits = nn.Sequential(
+                nn.LayerNorm(dim),
+                nn.Linear(dim, num_tokens, bias = False)
+            )
 
     @torch.no_grad()
     @eval_decorator
@@ -315,6 +321,7 @@ class LocalTransformer(Module):
         use_kv_cache = True,
         **kwargs
     ):
+        assert self.has_embed_unembed
         assert temperature >= 0.
 
         n, device = prime.shape[1], prime.device
@@ -359,10 +366,12 @@ class LocalTransformer(Module):
             x, labels = x[:, :-1], x[:, 1:]
 
         n, device = x.shape[1], x.device
-        x = self.token_emb(x)
 
-        assert n <= self.max_seq_len
-        x = x + self.pos_emb(torch.arange(n, device = device))
+        if self.has_embed_unembed:
+            x = self.token_emb(x)
+
+            assert n <= self.max_seq_len
+            x = x + self.pos_emb(torch.arange(n, device = device))
 
         # handle old and new cache
 
@@ -408,6 +417,9 @@ class LocalTransformer(Module):
             x = ff(x)
 
         x = self.reduce_streams(x)
+
+        if not self.has_embed_unembed:
+            return x
 
         # to logits
 
