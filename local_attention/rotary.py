@@ -39,7 +39,7 @@ class SinusoidalEmbeddings(Module):
         freqs =  torch.cat((freqs, freqs), dim = -1)
 
         if not self.use_xpos:
-            return freqs, torch.ones(1, device = device)
+            return freqs, torch.ones(1, device = device, dtype = freqs.dtype)
 
         power = (t - (seq_len // 2)) / self.scale_base
         scale = self.scale ** rearrange(power, 'n -> n 1')

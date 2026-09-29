@@ -47,3 +47,27 @@ def test_cache(
     out_with_cache = mha(next_token, cache = cache, attn_bias = attn_bias)[:, -1]
 
     assert torch.allclose(out_without_cache, out_with_cache, atol = 1e-6)
+
+@pytest.mark.parametrize('dtype', (torch.float16, torch.bfloat16))
+@pytest.mark.parametrize('use_xpos', (True, False))
+def test_half_precision(dtype, use_xpos):
+    from local_attention import LocalAttention
+
+    kwargs = dict(
+        dim = 32,
+        window_size = 16,
+        causal = True,
+        look_backward = 1,
+        use_rotary_pos_emb = not use_xpos,
+        use_xpos = use_xpos
+    )
+
+    q, k, v = torch.randn(3, 2, 4, 128, 32).unbind(dim = 0)
+
+    ref = LocalAttention(**kwargs)(q, k, v)
+
+    attn = LocalAttention(**kwargs).to(dtype)
+    out = attn(q.to(dtype), k.to(dtype), v.to(dtype))
+
+    assert out.dtype == dtype
+    assert torch.allclose(out.float(), ref, atol = 1e-1)
