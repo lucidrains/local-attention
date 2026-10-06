@@ -53,14 +53,15 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim = -1)
 
 @autocast('cuda', enabled = False)
-def apply_rotary_pos_emb(q, k, freqs, scale = 1):
+def apply_rotary_pos_emb(q, k, freqs, scale = 1, q_pos_offset = 0):
     q_len = q.shape[-2]
-    q_freqs = freqs[..., -q_len:, :]
+    q_end = freqs.shape[-2] - q_pos_offset
+    q_freqs = freqs[..., (q_end - q_len):q_end, :]
 
     inv_scale = scale ** -1
 
     if scale.ndim == 2:
-        scale = scale[-q_len:, :]
+        scale = scale[(q_end - q_len):q_end, :]
 
     q = (q * q_freqs.cos() * scale) + (rotate_half(q) * q_freqs.sin() * scale)
     k = (k * freqs.cos() * inv_scale) + (rotate_half(k) * freqs.sin() * inv_scale)
