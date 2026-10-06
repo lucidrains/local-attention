@@ -123,7 +123,7 @@ class LocalAttention(Module):
 
         if autopad:
             orig_seq_len = q.shape[1]
-            (needed_pad, q), (_, k), (_, v) = map(lambda t: pad_to_multiple(t, self.window_size, dim = -2), (q, k, v))
+            (needed_pad, q), (_, k), (_, v) = map(lambda t: pad_to_multiple(t, window_size, dim = -2), (q, k, v))
 
         b, n, dim_head, device, dtype = *q.shape, q.device, q.dtype
 
@@ -190,7 +190,7 @@ class LocalAttention(Module):
             causal_mask = bq_t < bq_k
 
             if self.exact_windowsize:
-                max_causal_window_size = (self.window_size * self.look_backward)
+                max_causal_window_size = (window_size * self.look_backward)
                 causal_mask = causal_mask | (bq_t > (bq_k + max_causal_window_size))
 
             sim = sim.masked_fill(causal_mask, mask_value)
@@ -200,8 +200,8 @@ class LocalAttention(Module):
         # as well as masking out for padding value
 
         if not causal and self.exact_windowsize:
-            max_backward_window_size = (self.window_size * self.look_backward)
-            max_forward_window_size = (self.window_size * self.look_forward)
+            max_backward_window_size = (window_size * self.look_backward)
+            max_forward_window_size = (window_size * self.look_forward)
             window_mask = ((bq_k - max_forward_window_size) > bq_t) | (bq_t > (bq_k + max_backward_window_size)) | pad_mask
             sim = sim.masked_fill(window_mask, mask_value)
         else:
