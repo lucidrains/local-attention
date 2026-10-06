@@ -142,7 +142,7 @@ class LocalMHA(Module):
                 kv_start_index = -(effective_window_size + 1)
             else:
                 seq_len = k.shape[-2]
-                kv_start_index = -(effective_window_size + (seq_len % self.window_size))
+                kv_start_index = -(effective_window_size + ((seq_len - 1) % self.window_size + 1))
 
             k, v = tuple(t[..., kv_start_index:, :] for t in (k, v))
 
