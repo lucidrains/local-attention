@@ -169,6 +169,8 @@ class LocalAttention(Module):
         bq_k = rearrange(bq_k, '... j -> ... 1 j')
 
         pad_mask = bq_k == pad_value
+        if autopad:
+            pad_mask = pad_mask | (bq_k >= orig_seq_len)
 
         sim = einsum('b h i e, b h j e -> b h i j', bq, bk)
 
