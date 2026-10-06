@@ -158,7 +158,10 @@ class LocalAttention(Module):
 
         if exists(self.rel_pos):
             pos_emb, xpos_scale = self.rel_pos(bk)
-            bq, bk = apply_rotary_pos_emb(bq, bk, pos_emb, scale = xpos_scale)
+            bq, bk = apply_rotary_pos_emb(
+                bq, bk, pos_emb, scale = xpos_scale,
+                q_pos_offset = look_forward * window_size
+            )
 
         # calculate positions for masking
 
