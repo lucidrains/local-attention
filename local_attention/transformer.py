@@ -145,6 +145,7 @@ class LocalMHA(Module):
                 kv_start_index = -(effective_window_size + (seq_len % self.window_size))
 
             k, v = tuple(t[..., kv_start_index:, :] for t in (k, v))
+            cache_k = k
 
             if exists(self.attn_fn.rel_pos):
                 rel_pos = self.attn_fn.rel_pos
@@ -166,7 +167,7 @@ class LocalMHA(Module):
             out = self.attn_fn(q, k, v, mask = mask, attn_bias = attn_bias)
 
         if return_cache:
-            kv = torch.stack((k, v))
+            kv = torch.stack((cache_k if exists(cache) else k, v))
 
         if exists(self.to_v_gate):
             gates = self.to_v_gate(x)
