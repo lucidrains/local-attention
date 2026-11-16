@@ -3,6 +3,17 @@ import pytest
 import torch
 from local_attention.transformer import LocalMHA, DynamicPositionBias
 
+@pytest.mark.parametrize('qk_scale', [2., 8.])
+def test_normalized_cached_attention_uses_prefill_scale(qk_scale):
+    mha = LocalMHA(dim = 32, heads = 2, dim_head = 16, window_size = 8,
+                   causal = True, qk_rmsnorm = True, qk_scale = qk_scale).eval()
+    seq = torch.randn(2, 12, 32)
+    with torch.no_grad():
+        _, cache = mha(seq[:, :-1], return_cache = True)
+        decoded = mha(seq[:, -1:], cache = cache)
+        expected = mha(seq)[:, -1:]
+    torch.testing.assert_close(decoded, expected)
+
 @pytest.mark.parametrize('use_rotary_pos_emb', (True, False))
 @pytest.mark.parametrize('use_attn_bias', (True, False))
 @pytest.mark.parametrize('exact_windowsize', (True, False))
