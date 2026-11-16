@@ -131,7 +131,7 @@ class LocalMHA(Module):
 
             ck, cv = cache
 
-            q = q * (q.shape[-1] ** -0.5)
+            q = q * default(self.attn_fn.scale, q.shape[-1] ** -0.5)
 
             k = torch.cat((ck, k), dim = -2)
             v = torch.cat((cv, v), dim = -2)
